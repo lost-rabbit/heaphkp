@@ -37,7 +37,7 @@
 
 addon.name    = 'heaphkp';
 addon.author  = 'Heaph';
-addon.version = '1.5.0';
+addon.version = '1.5.1';
 addon.desc    = 'HeaphKP: linkshell DKP shared between officers, auctions, ready checks, drop screenshots, HNM windows.';
 addon.link    = '';
 
@@ -2395,56 +2395,178 @@ end
 
 ---------------------------------------------------------------------------------------------------------------------
 local function tab_settings()
-    if imgui.BeginChild('##set', { 0, 0 }, ImGuiChildFlags_None) then
-        section('Chat control');
-        label('Everything works from this window. Turn on only the chat you want the addon to listen to or say.');
-        check('Post announcements', 'announce', 'Ready checks, ticks, auctions and results go to the channel below. Off = only you see them.');
-        imgui.SameLine();
-        local ch = combo('##ch', db.cfg.channel, { 'l', 'l2', 'p' }, 60);
-        if (ch ~= db.cfg.channel) then db.cfg.channel = ch; touch(); end
-        imgui.SameLine(); label('l = linkshell, l2 = second linkshell, p = party');
-        check('People can answer ready checks by saying "here"', 'chatHere');
-        check('People can bid in chat ("bid 120")', 'chatBids');
-        check('People can ask their balance ("!dkp")', 'chatBalance');
-        check('Officers can run things from chat (!auction, !tod, !award...)', 'chatCommands',
-            'Off by default. When on, the roles below decide who can use which.');
-        check('Answer people by tell', 'replyTells', 'Bid refusals, sealed-bid receipts and balances.');
-        check('Answer roll calls', 'answerRollCall', 'When a keeper posts "[DKP] Roll call", tell them you run HeaphKP (once per asker per 10 min).');
-        check('Post HNM ToDs to the LS', 'todPost', 'Only while an event is running, and only from officers, admins and the owner. Everyone else just records them.');
-
-        section('Bidding');
-        local x = { db.cfg.bidExtend }; local inc = { db.cfg.increment }; local mn = { db.cfg.defaultMin };
-        label('late-bid reset'); imgui.SameLine(); small_input_int('s##be', x, 50);
-        imgui.SameLine(); label('min raise'); imgui.SameLine(); small_input_int('##inc', inc, 50);
-        imgui.SameLine(); label('default min price'); imgui.SameLine(); small_input_int('##dm', mn, 60);
-        if (x[1] ~= db.cfg.bidExtend) or (inc[1] ~= db.cfg.increment) or (mn[1] ~= db.cfg.defaultMin) then
-            db.cfg.bidExtend, db.cfg.increment, db.cfg.defaultMin = math.max(0, x[1]), math.max(1, inc[1]), math.max(0, mn[1]);
-            touch();
+    -- Five short pages instead of one long scroll.
+    if imgui.BeginTabBar('##settabs') then
+        if imgui.BeginTabItem('General') then
+            if imgui.BeginChild('##set_general', { 0, 0 }, ImGuiChildFlags_None) then
+                section('Window style');
+                local names = {};
+                for _, t in ipairs(ui.THEMES) do names[#names + 1] = t.name; end
+                local pickT = combo('##theme', ui.theme().name, names, 170);
+                for _, t in ipairs(ui.THEMES) do if (t.name == pickT) and (t.key ~= db.cfg.theme) then db.cfg.theme = t.key; touch(); end end
+                imgui.SameLine(); label('opacity'); imgui.SameLine();
+                local op = { db.cfg.opacity or 100 }; small_input_int('%##opac', op, 60);
+                if (op[1] ~= db.cfg.opacity) then db.cfg.opacity = math.max(30, math.min(100, op[1])); touch(); end
+                section('Moogle button');
+                check('Show the moogle on screen', 'showPill', 'Click it to open or close HeaphKP. Drag it to move it.');
+                local st = combo('##istyle', (db.cfg.iconStyle == 'round') and 'Round moogle' or 'Clock moogle', { 'Clock moogle', 'Round moogle' }, 150);
+                local want = (st == 'Round moogle') and 'round' or 'clock';
+                if (want ~= (db.cfg.iconStyle or 'clock')) then db.cfg.iconStyle = want; touch(); end
+                imgui.SameLine(); label('size'); imgui.SameLine();
+                local isz = { db.cfg.iconSize or 70 }; small_input_int('##isize', isz, 60);
+                if (isz[1] ~= db.cfg.iconSize) then db.cfg.iconSize = math.max(40, math.min(200, isz[1])); touch(); end
+                imgui.SameLine(); check('Bob', 'iconBob');
+                label('The clock counts down to the next known window: 21h05, then 05:00, then OPEN. Gold within your alert time.');
+                section('Window alerts');
+                check('Alert before known windows', 'notifyOn');
+                imgui.SameLine(); local nl = { db.cfg.notifyLead }; small_input_int('min before##nl', nl, 50);
+                if (nl[1] ~= db.cfg.notifyLead) then db.cfg.notifyLead = math.max(1, nl[1]); touch(); end
+                check('Chime', 'notifySound'); imgui.SameLine(); check('Also post them to the LS (during events)', 'notifyLS');
+                imgui.SameLine();
+                if imgui.SmallButton('Test') then notify('Test: King Arthro window opens in 30 min.'); end
+                section('Time');
+                label(('Times show in your zone (%s). LS posts say the zone and a countdown, so every member reads them right.'):format(zone()));
+                label(((access.clockOffset or 0) ~= 0) and ('Your PC clock is %+ds off the server; HeaphKP corrects it.'):format(-(access.clockOffset or 0))
+                    or 'Your PC clock matches the sync server.');
+            end
+            imgui.EndChild();
+            imgui.EndTabItem();
         end
-        check('Allow bidding past your balance', 'allowNeg');
-        imgui.SameLine(); check('Anyone who answers a ready check joins the roster', 'openRoster');
-
-        section('Minimum prices');
-        local keys = {};
-        for kk in pairs(db.prices) do keys[#keys + 1] = kk; end
-        table.sort(keys);
-        for _, kk in ipairs(keys) do
-            local p = db.prices[kk];
-            imgui.TextColored(C.text, p.name); imgui.SameLine(ui.px(220));
-            local v = { p.min }; small_input_int('##pv' .. kk, v, 70);
-            if (v[1] ~= p.min) and not imgui.IsItemActive() then set_price(kk, p.name, math.max(0, v[1])); end
-            if (v[1] ~= p.min) and imgui.IsItemActive() then p.min = math.max(0, v[1]); end
-            if imgui.IsItemDeactivatedAfterEdit() then set_price(kk, p.name, p.min); end
-            imgui.SameLine(); if imgui.SmallButton('Remove##pr' .. kk) then del_price(kk); end
+        if imgui.BeginTabItem('Chat') then
+            if imgui.BeginChild('##set_chat', { 0, 0 }, ImGuiChildFlags_None) then
+                section('Chat control');
+                label('Everything works from this window. Turn on only the chat you want the addon to listen to or say.');
+                check('Post announcements', 'announce', 'Ready checks, ticks, auctions and results go to the channel below. Off = only you see them.');
+                imgui.SameLine();
+                local ch = combo('##ch', db.cfg.channel, { 'l', 'l2', 'p' }, 60);
+                if (ch ~= db.cfg.channel) then db.cfg.channel = ch; touch(); end
+                imgui.SameLine(); label('l = linkshell, l2 = second linkshell, p = party');
+                check('People can answer ready checks by saying "here"', 'chatHere');
+                check('People can bid in chat ("bid 120")', 'chatBids');
+                check('People can ask their balance ("!dkp")', 'chatBalance');
+                check('Officers can run things from chat (!auction, !tod, !award...)', 'chatCommands',
+                    'Off by default. When on, the roles below decide who can use which.');
+                check('Answer people by tell', 'replyTells', 'Bid refusals, sealed-bid receipts and balances.');
+                check('Answer roll calls', 'answerRollCall', 'When a keeper posts "[DKP] Roll call", tell them you run HeaphKP (once per asker per 10 min).');
+                check('Post HNM ToDs to the LS', 'todPost', 'Only while an event is running, and only from officers, admins and the owner. Everyone else just records them.');
+                imgui.Spacing();
+                label('What each role can do from chat:');
+                for _, a in ipairs(ACTIONS) do
+                    imgui.TextColored(C.text, a.label); imgui.SameLine(ui.px(210));
+                    local nr = combo('##need' .. a.key, db.cfg.need[a.key], ROLES, 100);
+                    if (nr ~= db.cfg.need[a.key]) then db.cfg.need[a.key] = nr; touch(); end
+                end
+            end
+            imgui.EndChild();
+            imgui.EndTabItem();
         end
-        imgui.SetNextItemWidth(ui.px(210)); imgui.InputTextWithHint('##pi', 'Item name', ui.priceItem, 64);
-        imgui.SameLine(); small_input_int('##pm', ui.priceMin, 70);
-        imgui.SameLine();
-        if button('Add price', ui.priceItem[1] ~= '') then
-            set_price(item_key(ui.priceItem[1]), ui.priceItem[1], math.max(0, ui.priceMin[1]));
-            ui.priceItem[1], ui.priceMin[1] = '', 0;
+        if imgui.BeginTabItem('Bidding') then
+            if imgui.BeginChild('##set_bid', { 0, 0 }, ImGuiChildFlags_None) then
+                section('Bidding');
+                local x = { db.cfg.bidExtend }; local inc = { db.cfg.increment }; local mn = { db.cfg.defaultMin };
+                label('late-bid reset'); imgui.SameLine(); small_input_int('s##be', x, 50);
+                imgui.SameLine(); label('min raise'); imgui.SameLine(); small_input_int('##inc', inc, 50);
+                imgui.SameLine(); label('default min price'); imgui.SameLine(); small_input_int('##dm', mn, 60);
+                if (x[1] ~= db.cfg.bidExtend) or (inc[1] ~= db.cfg.increment) or (mn[1] ~= db.cfg.defaultMin) then
+                    db.cfg.bidExtend, db.cfg.increment, db.cfg.defaultMin = math.max(0, x[1]), math.max(1, inc[1]), math.max(0, mn[1]);
+                    touch();
+                end
+                check('Allow bidding past your balance', 'allowNeg');
+                imgui.SameLine(); check('Anyone who answers a ready check joins the roster', 'openRoster');
+                section('Minimum prices');
+                local keys = {};
+                for kk in pairs(db.prices) do keys[#keys + 1] = kk; end
+                table.sort(keys);
+                for _, kk in ipairs(keys) do
+                    local p = db.prices[kk];
+                    imgui.TextColored(C.text, p.name); imgui.SameLine(ui.px(220));
+                    local v = { p.min }; small_input_int('##pv' .. kk, v, 70);
+                    if (v[1] ~= p.min) and not imgui.IsItemActive() then set_price(kk, p.name, math.max(0, v[1])); end
+                    if (v[1] ~= p.min) and imgui.IsItemActive() then p.min = math.max(0, v[1]); end
+                    if imgui.IsItemDeactivatedAfterEdit() then set_price(kk, p.name, p.min); end
+                    imgui.SameLine(); if imgui.SmallButton('Remove##pr' .. kk) then del_price(kk); end
+                end
+                imgui.SetNextItemWidth(ui.px(210)); imgui.InputTextWithHint('##pi', 'Item name', ui.priceItem, 64);
+                imgui.SameLine(); small_input_int('##pm', ui.priceMin, 70);
+                imgui.SameLine();
+                if button('Add price', ui.priceItem[1] ~= '') then
+                    set_price(item_key(ui.priceItem[1]), ui.priceItem[1], math.max(0, ui.priceMin[1]));
+                    ui.priceItem[1], ui.priceMin[1] = '', 0;
+                end
+            end
+            imgui.EndChild();
+            imgui.EndTabItem();
         end
+        if imgui.BeginTabItem('Timers & loot') then
+            if imgui.BeginChild('##set_timers', { 0, 0 }, ImGuiChildFlags_None) then
+                section('Drop screenshots');
+                local sm = combo('##shot', db.cfg.shotMode, { 'tracked', 'all', 'off' }, 100);
+                if (sm ~= db.cfg.shotMode) then db.cfg.shotMode = sm; touch(); end
+                imgui.SameLine(); label('tracked = HNM/NM drops, priced items, anything during an event');
+                section('Extra mobs to time');
+                for name, c in pairs(db.custom) do
+                    imgui.TextColored(C.text, name); imgui.SameLine(ui.px(200));
+                    imgui.TextColored(C.dim, ('%s - %s'):format(dur(c.minS), dur(c.maxS)));
+                    imgui.SameLine(ui.px(330)); if imgui.SmallButton('Remove##c' .. name) then del_custom(name); end
+                end
+                imgui.SetNextItemWidth(ui.px(160)); imgui.InputTextWithHint('##tn', 'Mob name', ui.trackName, 32);
+                imgui.SameLine(); label('respawn'); imgui.SameLine(); small_input_int('##tl', ui.trackLo, 40);
+                imgui.SameLine(); label('to'); imgui.SameLine(); small_input_int('h##th', ui.trackHi, 40);
+                imgui.SameLine();
+                if button('Track', (ui.trackName[1] ~= '') and (ui.trackHi[1] >= ui.trackLo[1]) and ui.trackHi[1] > 0) then
+                    set_custom(ui.trackName[1], ui.trackLo[1] * 3600, ui.trackHi[1] * 3600);
+                    ui.trackName[1] = '';
+                end
+            end
+            imgui.EndChild();
+            imgui.EndTabItem();
+        end
+        if imgui.BeginTabItem('Server') then
+            if imgui.BeginChild('##set_server', { 0, 0 }, ImGuiChildFlags_None) then
+                section('Sync server');
+                if (ui.serverBuf == nil) then ui.serverBuf = { access.server or '' }; end
+                imgui.SetNextItemWidth(ui.px(320)); imgui.InputText('##srv', ui.serverBuf, 128);
+                imgui.SameLine();
+                if button('Save', ui.serverBuf[1] ~= access.server) then access.server = ui.serverBuf[1]; save_access(); end
+                local simple = { net ~= nil and net.blocking or false };
+                if imgui.Checkbox('Simple network mode', simple) and (net ~= nil) then net.blocking = simple[1]; access.blocking = simple[1]; save_access(); end
+                if imgui.IsItemHovered() then imgui.SetTooltip('Use only if syncing keeps failing. The game pauses briefly on each sync.'); end
+                imgui.SameLine();
+                local skip = { access.tlsSkip and true or false };
+                if imgui.Checkbox('Skip certificate check', skip) and (net ~= nil) then access.tlsSkip = skip[1]; net.verify = not skip[1]; save_access(); end
+                if imgui.IsItemHovered() then imgui.SetTooltip('The server certificate is checked against assets\\cacert.pem. Skip only if that check fails on your PC.'); end
+                imgui.Spacing();
+                if (bookKey ~= 'local') and can_manage() then
+                    section('API keys (bots, Discord, websites)');
+                    label('A key reads the book (viewer) or also writes ToDs, adjustments and awards (officer), signed as bot:<label>.');
+                    for _, k in ipairs(db.keys or {}) do
+                        imgui.TextColored(C.text, k.name); imgui.SameLine(ui.px(170));
+                        imgui.TextColored(C.dim, ('%s, used %s'):format(k.role, (k.last_seen or 0) > 0 and (dur(os.time() - k.last_seen) .. ' ago') or 'never'));
+                        imgui.SameLine(ui.px(360));
+                        if imgui.SmallButton('Revoke##k' .. k.name) then HK.revoke_key(k.label); end
+                    end
+                    imgui.SetNextItemWidth(ui.px(140)); imgui.InputTextWithHint('##klabel', 'Label, e.g. Discord', ui.keyLabel, 20);
+                    imgui.SameLine(); ui.keyRole = combo('##krole', ui.keyRole, { 'viewer', 'officer' }, 90);
+                    imgui.SameLine();
+                    if button('Make key', ui.keyLabel[1] ~= '') then HK.make_key(ui.keyLabel[1], ui.keyRole); ui.keyLabel[1] = ''; end
+                    if (ui.newKey[1] ~= '') then
+                        imgui.TextColored(C.warn, 'New key (select and Ctrl+C; it will not be shown again):');
+                        imgui.SetNextItemWidth(ui.px(420)); imgui.InputText('##knew', ui.newKey, 80);
+                        imgui.SameLine(); if imgui.SmallButton('Hide') then ui.newKey[1] = ''; end
+                    end
+                end
+            end
+            imgui.EndChild();
+            imgui.EndTabItem();
+        end
+        imgui.EndTabBar();
+    end
+end
 
+---------------------------------------------------------------------------------------------------------------------
+-- Members: who is in the book, who to invite, who asked to join.
+local function tab_members()
+    if imgui.BeginChild('##members', { 0, 0 }, ImGuiChildFlags_None) then
         section('Roles');
         if synced() then
             label('Shared book: roles live on the server. viewer = can open the book, officer = can run it,');
@@ -2489,78 +2611,89 @@ local function tab_settings()
             imgui.SameLine();
             if button('Set role', valid_name(ui.permName)) then set_role(ui.permName, ui.permRole); end
         end
-        label('What each role can do from chat:');
-        for _, a in ipairs(ACTIONS) do
-            imgui.TextColored(C.text, a.label); imgui.SameLine(ui.px(210));
-            local nr = combo('##need' .. a.key, db.cfg.need[a.key], ROLES, 100);
-            if (nr ~= db.cfg.need[a.key]) then db.cfg.need[a.key] = nr; touch(); end
-        end
-
-        section('Drop screenshots');
-        local sm = combo('##shot', db.cfg.shotMode, { 'tracked', 'all', 'off' }, 100);
-        if (sm ~= db.cfg.shotMode) then db.cfg.shotMode = sm; touch(); end
-        imgui.SameLine(); label('tracked = HNM/NM drops, priced items, anything during an event');
-
-        section('Extra mobs to time');
-        for name, c in pairs(db.custom) do
-            imgui.TextColored(C.text, name); imgui.SameLine(ui.px(200));
-            imgui.TextColored(C.dim, ('%s - %s'):format(dur(c.minS), dur(c.maxS)));
-            imgui.SameLine(ui.px(330)); if imgui.SmallButton('Remove##c' .. name) then del_custom(name); end
-        end
-        imgui.SetNextItemWidth(ui.px(160)); imgui.InputTextWithHint('##tn', 'Mob name', ui.trackName, 32);
-        imgui.SameLine(); label('respawn'); imgui.SameLine(); small_input_int('##tl', ui.trackLo, 40);
-        imgui.SameLine(); label('to'); imgui.SameLine(); small_input_int('h##th', ui.trackHi, 40);
+        section('Who has HeaphKP?');
+        if imgui.Button('Ask the linkshell') then run('rollcall', ''); end
+        if imgui.IsItemHovered() then imgui.SetTooltip('Posts one line in the LS; everyone running HeaphKP answers you by tell.'); end
         imgui.SameLine();
-        if button('Track', (ui.trackName[1] ~= '') and (ui.trackHi[1] >= ui.trackLo[1]) and ui.trackHi[1] > 0) then
-            set_custom(ui.trackName[1], ui.trackLo[1] * 3600, ui.trackHi[1] * 3600);
-            ui.trackName[1] = '';
-        end
-
-        section('Window alerts');
-        check('Alert before known windows', 'notifyOn');
-        imgui.SameLine(); local nl = { db.cfg.notifyLead }; small_input_int('min before##nl', nl, 50);
-        if (nl[1] ~= db.cfg.notifyLead) then db.cfg.notifyLead = math.max(1, nl[1]); touch(); end
-        check('Chime', 'notifySound'); imgui.SameLine(); check('Also post them to the LS (during events)', 'notifyLS');
-        imgui.SameLine();
-        if imgui.SmallButton('Test') then notify('Test: King Arthro window opens in 30 min.'); end
-
-        section('Window style');
+        local tn = HK.target_name();
+        if button(tn and ('Ask target: ' .. tn) or 'Ask target', tn ~= nil) then run('rollcall', 't'); end
+        imgui.SameLine(); label('as'); imgui.SameLine();
+        ui.rcRole = combo('##rcrole', ui.rcRole or 'viewer', { 'viewer', 'officer', 'admin' }, 90);
         local names = {};
-        for _, t in ipairs(ui.THEMES) do names[#names + 1] = t.name; end
-        local pickT = combo('##theme', ui.theme().name, names, 170);
-        for _, t in ipairs(ui.THEMES) do if (t.name == pickT) and (t.key ~= db.cfg.theme) then db.cfg.theme = t.key; touch(); end end
-        imgui.SameLine(); label('opacity'); imgui.SameLine();
-        local op = { db.cfg.opacity or 100 }; small_input_int('%##opac', op, 60);
-        if (op[1] ~= db.cfg.opacity) then db.cfg.opacity = math.max(30, math.min(100, op[1])); touch(); end
+        for n in pairs(HK.rollcall or {}) do names[#names + 1] = n; end
+        table.sort(names);
+        if (#names == 0) then
+            label(HK.rollcallAt and ('No answers yet (asked %s ago).'):format(dur(os.time() - HK.rollcallAt)) or 'Nobody asked yet.');
+        else
+            local canInv = (bookKey ~= 'local') and can_manage();
+            local fresh = 0;
+            for _, n in ipairs(names) do
+                local a = HK.rollcall[n];
+                local inBook = (db.perms[n] ~= nil);
+                imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
+                imgui.TextColored(inBook and C.good or C.dim, inBook and ('in the book (%s)'):format(db.perms[n]) or ('has HeaphKP %s'):format(a.ver));
+                imgui.SameLine(ui.px(340));
+                if (not inBook) then
+                    fresh = fresh + 1;
+                    if button('Invite##rc' .. n, canInv) then add_member(n); send_invite(n, ui.rcRole or 'viewer'); end
+                end
+            end
+            if (fresh > 0) and button(('Invite all %d as %s'):format(fresh, ui.rcRole or 'viewer'), canInv) then
+                for _, n in ipairs(names) do if (db.perms[n] == nil) then add_member(n); send_invite(n, ui.rcRole or 'viewer'); end end
+            end
+            if (not canInv) then label(bookKey == 'local' and 'Share the book (Turn on DKP) to invite them.' or 'Only the owner or an admin invites.'); end
+            imgui.SameLine(); if imgui.SmallButton('Clear##rc') then HK.rollcall = {}; end
+        end
 
-        section('Moogle button');
-        check('Show the moogle on screen', 'showPill', 'Click it to open or close HeaphKP. Drag it to move it.');
-        local st = combo('##istyle', (db.cfg.iconStyle == 'round') and 'Round moogle' or 'Clock moogle', { 'Clock moogle', 'Round moogle' }, 150);
-        local want = (st == 'Round moogle') and 'round' or 'clock';
-        if (want ~= (db.cfg.iconStyle or 'clock')) then db.cfg.iconStyle = want; touch(); end
-        imgui.SameLine(); label('size'); imgui.SameLine();
-        local isz = { db.cfg.iconSize or 70 }; small_input_int('##isize', isz, 60);
-        if (isz[1] ~= db.cfg.iconSize) then db.cfg.iconSize = math.max(40, math.min(200, isz[1])); touch(); end
-        imgui.SameLine(); check('Bob', 'iconBob');
-        label('The clock counts down to the next known window: 21h05, then 05:00, then OPEN. Gold within your alert time.');
+        local reqs = {};
+        for n in pairs(HK.joinReq or {}) do reqs[#reqs + 1] = n; end
+        table.sort(reqs);
+        if (#reqs > 0) then
+            section(('Join requests (%d typed !join heaphkp)'):format(#reqs));
+            local canInv = (bookKey ~= 'local') and can_manage();
+            for _, n in ipairs(reqs) do
+                imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
+                if (db.perms[n] ~= nil) then
+                    imgui.TextColored(C.good, ('already in the book (%s)'):format(db.perms[n]));
+                    imgui.SameLine(); if imgui.SmallButton('Dismiss##jr' .. n) then HK.joinReq[n] = nil; end
+                else
+                    imgui.TextColored(C.dim, ('asked %s ago'):format(dur(os.time() - HK.joinReq[n])));
+                    imgui.SameLine(ui.px(340));
+                    if button('Approve##jr' .. n, canInv) then HK.approve_join(n, ui.rcRole or 'viewer'); end
+                    imgui.SameLine(); if imgui.SmallButton('Dismiss##jd' .. n) then HK.joinReq[n] = nil; end
+                end
+            end
+            if button(('Approve all as %s'):format(ui.rcRole or 'viewer'), canInv) then
+                for _, n in ipairs(reqs) do if (db.perms[n] == nil) then HK.approve_join(n, ui.rcRole or 'viewer'); else HK.joinReq[n] = nil; end end
+            end
+            if (not canInv) then label(bookKey == 'local' and 'Share the book (Turn on DKP) to approve them.' or 'Only the owner or an admin approves.'); end
+        end
 
-        section('Time');
-        label(('Times show in your zone (%s). LS posts say the zone and a countdown, so every member reads them right.'):format(zone()));
-        label(((access.clockOffset or 0) ~= 0) and ('Your PC clock is %+ds off the server; HeaphKP corrects it.'):format(-(access.clockOffset or 0))
-            or 'Your PC clock matches the sync server.');
-
-        section('Sync server');
-        if (ui.serverBuf == nil) then ui.serverBuf = { access.server or '' }; end
-        imgui.SetNextItemWidth(ui.px(320)); imgui.InputText('##srv', ui.serverBuf, 128);
-        imgui.SameLine();
-        if button('Save', ui.serverBuf[1] ~= access.server) then access.server = ui.serverBuf[1]; save_access(); end
-        local simple = { net ~= nil and net.blocking or false };
-        if imgui.Checkbox('Simple network mode', simple) and (net ~= nil) then net.blocking = simple[1]; access.blocking = simple[1]; save_access(); end
-        if imgui.IsItemHovered() then imgui.SetTooltip('Use only if syncing keeps failing. The game pauses briefly on each sync.'); end
-        imgui.SameLine();
-        local skip = { access.tlsSkip and true or false };
-        if imgui.Checkbox('Skip certificate check', skip) and (net ~= nil) then access.tlsSkip = skip[1]; net.verify = not skip[1]; save_access(); end
-        if imgui.IsItemHovered() then imgui.SetTooltip('The server certificate is checked against assets\\cacert.pem. Skip only if that check fails on your PC.'); end
+        local reqs = {};
+        for n in pairs(HK.joinReq or {}) do reqs[#reqs + 1] = n; end
+        table.sort(reqs);
+        if (#reqs > 0) then
+            section(('Join requests (%d typed !join heaphkp)'):format(#reqs));
+            local canInv = (bookKey ~= 'local') and can_manage();
+            for _, n in ipairs(reqs) do
+                imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
+                if (db.perms[n] ~= nil) then
+                    imgui.TextColored(C.good, ('already in the book (%s)'):format(db.perms[n]));
+                    imgui.SameLine(); if imgui.SmallButton('Dismiss##jr' .. n) then HK.joinReq[n] = nil; end
+                else
+                    imgui.TextColored(C.dim, ('asked %s ago'):format(dur(os.time() - HK.joinReq[n])));
+                    imgui.SameLine(ui.px(340));
+                    if button('Approve##jr' .. n, canInv) then HK.approve_join(n, ui.rcRole or 'viewer'); end
+                    imgui.SameLine(); if imgui.SmallButton('Dismiss##jd' .. n) then HK.joinReq[n] = nil; end
+                end
+            end
+            if button(('Approve all as %s'):format(ui.rcRole or 'viewer'), canInv) then
+                for _, n in ipairs(reqs) do if (db.perms[n] == nil) then HK.approve_join(n, ui.rcRole or 'viewer'); else HK.joinReq[n] = nil; end end
+            end
+            if (not canInv) then label(bookKey == 'local' and 'Share the book (Turn on DKP) to approve them.' or 'Only the owner or an admin approves.'); end
+        else
+            label('When someone types !join heaphkp in the LS, they show up here for you to approve.');
+        end
     end
     imgui.EndChild();
 end
@@ -2648,83 +2781,6 @@ local function tab_linkshells()
         if imgui.IsItemHovered() then imgui.SetTooltip("Throws away this PC's copy and pulls the whole book again."); end
     end
 
-    section('Who has HeaphKP?');
-    if imgui.Button('Ask the linkshell') then run('rollcall', ''); end
-    if imgui.IsItemHovered() then imgui.SetTooltip('Posts one line in the LS; everyone running HeaphKP answers you by tell.'); end
-    imgui.SameLine();
-    local tn = HK.target_name();
-    if button(tn and ('Ask target: ' .. tn) or 'Ask target', tn ~= nil) then run('rollcall', 't'); end
-    imgui.SameLine(); label('as'); imgui.SameLine();
-    ui.rcRole = combo('##rcrole', ui.rcRole or 'viewer', { 'viewer', 'officer', 'admin' }, 90);
-    local names = {};
-    for n in pairs(HK.rollcall or {}) do names[#names + 1] = n; end
-    table.sort(names);
-    if (#names == 0) then
-        label(HK.rollcallAt and ('No answers yet (asked %s ago).'):format(dur(os.time() - HK.rollcallAt)) or 'Nobody asked yet.');
-    else
-        local canInv = (bookKey ~= 'local') and can_manage();
-        local fresh = 0;
-        for _, n in ipairs(names) do
-            local a = HK.rollcall[n];
-            local inBook = (db.perms[n] ~= nil);
-            imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
-            imgui.TextColored(inBook and C.good or C.dim, inBook and ('in the book (%s)'):format(db.perms[n]) or ('has HeaphKP %s'):format(a.ver));
-            imgui.SameLine(ui.px(340));
-            if (not inBook) then
-                fresh = fresh + 1;
-                if button('Invite##rc' .. n, canInv) then add_member(n); send_invite(n, ui.rcRole or 'viewer'); end
-            end
-        end
-        if (fresh > 0) and button(('Invite all %d as %s'):format(fresh, ui.rcRole or 'viewer'), canInv) then
-            for _, n in ipairs(names) do if (db.perms[n] == nil) then add_member(n); send_invite(n, ui.rcRole or 'viewer'); end end
-        end
-        if (not canInv) then label(bookKey == 'local' and 'Share the book (Turn on DKP) to invite them.' or 'Only the owner or an admin invites.'); end
-        imgui.SameLine(); if imgui.SmallButton('Clear##rc') then HK.rollcall = {}; end
-    end
-
-    local reqs = {};
-    for n in pairs(HK.joinReq or {}) do reqs[#reqs + 1] = n; end
-    table.sort(reqs);
-    if (#reqs > 0) then
-        section(('Join requests (%d typed !join heaphkp)'):format(#reqs));
-        local canInv = (bookKey ~= 'local') and can_manage();
-        for _, n in ipairs(reqs) do
-            imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
-            if (db.perms[n] ~= nil) then
-                imgui.TextColored(C.good, ('already in the book (%s)'):format(db.perms[n]));
-                imgui.SameLine(); if imgui.SmallButton('Dismiss##jr' .. n) then HK.joinReq[n] = nil; end
-            else
-                imgui.TextColored(C.dim, ('asked %s ago'):format(dur(os.time() - HK.joinReq[n])));
-                imgui.SameLine(ui.px(340));
-                if button('Approve##jr' .. n, canInv) then HK.approve_join(n, ui.rcRole or 'viewer'); end
-                imgui.SameLine(); if imgui.SmallButton('Dismiss##jd' .. n) then HK.joinReq[n] = nil; end
-            end
-        end
-        if button(('Approve all as %s'):format(ui.rcRole or 'viewer'), canInv) then
-            for _, n in ipairs(reqs) do if (db.perms[n] == nil) then HK.approve_join(n, ui.rcRole or 'viewer'); else HK.joinReq[n] = nil; end end
-        end
-        if (not canInv) then label(bookKey == 'local' and 'Share the book (Turn on DKP) to approve them.' or 'Only the owner or an admin approves.'); end
-    end
-
-    if (bookKey ~= 'local') and can_manage() then
-        section('API keys (bots, Discord, websites)');
-        label('A key reads the book (viewer) or also writes ToDs, adjustments and awards (officer), signed as bot:<label>.');
-        for _, k in ipairs(db.keys or {}) do
-            imgui.TextColored(C.text, k.name); imgui.SameLine(ui.px(170));
-            imgui.TextColored(C.dim, ('%s, used %s'):format(k.role, (k.last_seen or 0) > 0 and (dur(os.time() - k.last_seen) .. ' ago') or 'never'));
-            imgui.SameLine(ui.px(360));
-            if imgui.SmallButton('Revoke##k' .. k.name) then HK.revoke_key(k.label); end
-        end
-        imgui.SetNextItemWidth(ui.px(140)); imgui.InputTextWithHint('##klabel', 'Label, e.g. Discord', ui.keyLabel, 20);
-        imgui.SameLine(); ui.keyRole = combo('##krole', ui.keyRole, { 'viewer', 'officer' }, 90);
-        imgui.SameLine();
-        if button('Make key', ui.keyLabel[1] ~= '') then HK.make_key(ui.keyLabel[1], ui.keyRole); ui.keyLabel[1] = ''; end
-        if (ui.newKey[1] ~= '') then
-            imgui.TextColored(C.warn, 'New key (select and Ctrl+C; it will not be shown again):');
-            imgui.SetNextItemWidth(ui.px(420)); imgui.InputText('##knew', ui.newKey, 80);
-            imgui.SameLine(); if imgui.SmallButton('Hide') then ui.newKey[1] = ''; end
-        end
-    end
     section('Join with a code');
     imgui.SetNextItemWidth(ui.px(150)); imgui.InputTextWithHint('##jls', 'Linkshell name', ui.joinLs, 24);
     imgui.SameLine(); imgui.SetNextItemWidth(ui.px(110)); imgui.InputTextWithHint('##jcode', 'ABCD-EFGH', ui.joinCode, 12);
@@ -2762,9 +2818,9 @@ local function tab_help()
 end
 
 local TABS = {
-    { 'Linkshells', tab_linkshells },
     { 'Standings', tab_standings }, { 'Auction', tab_auction }, { 'Timers', tab_timers }, { 'Attendance', tab_attendance },
-    { 'Loot', tab_loot }, { 'History', tab_history }, { 'Settings', tab_settings }, { 'Help', tab_help },
+    { 'Loot', tab_loot }, { 'Members', tab_members }, { 'Linkshells', tab_linkshells }, { 'History', tab_history },
+    { 'Settings', tab_settings }, { 'Help', tab_help },
 };
 
 -- Look: the same style as the luashitacast HUD windows - the FFXI Window1 card
@@ -3144,7 +3200,7 @@ local function draw()
                 for _, t in ipairs(TABS) do
                     local flags = (ui.goTab == t[1]) and ImGuiTabItemFlags_SetSelected or 0;
                     if imgui.BeginTabItem(t[1], nil, flags) then
-                        local lock = read_only() and (t[1] == 'Auction' or t[1] == 'Attendance' or t[1] == 'Settings');
+                        local lock = read_only() and (t[1] == 'Auction' or t[1] == 'Attendance' or t[1] == 'Settings' or t[1] == 'Members');
                         if lock then imgui.BeginDisabled(true); end
                         t[2]();
                         if lock then imgui.EndDisabled(); end
