@@ -35,13 +35,13 @@ with it can act as you in that linkshell's book.
 
 1. Put on the **Linkshell item** (not a pearl or sack) and open the Linkshells tab. Only the LS owner is offered
    "Turn on DKP". The This-PC book can be brought along.
-2. Invite people from Standings or Settings. The invite is a tell with a one-use code that lasts one hour; their
+2. Invite people from the Members tab (by name, your target, a roll call of the LS, or `!join heaphkp` requests). The invite is a tell with a one-use code that lasts one hour; their
    HeaphKP shows an Accept button on the Linkshells tab. The owner can send a code to their own name for a second PC.
 3. Roles: **viewer** (looks, and shares the ToDs their client sees), **officer** (runs the book), **admin** (also roles
    and the roster), **owner** (also makes admins). The server checks every change against the sender's role, and signs
    every change with the sender's registered name, so nobody can write as someone else. Settings shows who has joined
    and when they last synced.
-4. **SHARE TOD / DO NOT SHARE** on the Timers and Linkshells tabs decides whether the ToDs your client sees go to the book.
+4. **SHARE TOD / DO NOT SHARE** on the ToDs and Linkshells tabs decides whether the ToDs your client sees go to the book.
 
 Posts into linkshell chat (ready checks, auction results, ToDs) go only to the book's own linkshell, in whichever slot
 you have it equipped, and only while it is equipped. ToDs are posted only by officers and only while a camp is running.
@@ -86,7 +86,7 @@ Your own `!event start ka` typed into linkshell or party chat also runs, so the 
 
 - **Other Ashita addons** read `config\addons\heaphkp\state.json` (standings, windows, the running event and
   auction, rewritten every 5 s) and drive HeaphKP with its own commands (`/hkp tod ka now`, `/hkp add Name 5`).
-- **Bots, websites, spreadsheets** use API keys made in the Linkshells tab (viewer = read, officer = write). A key
+- **Bots, websites, spreadsheets** use API keys made in Settings > Server (viewer = read, officer = write). A key
   is the identity `bot:<label>` on the server: everything it writes is signed as that bot and it can be revoked
   like a member. `GET /v1/book`, `POST /v1/tod`, `POST /v1/adjust`, `POST /v1/award`.
 

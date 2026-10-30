@@ -62,6 +62,6 @@ timers, all in one ImGui window. Optionally several members share one book throu
 ## How to try it without a linkshell
 
 1. `/addon load heaphkp`, click the moogle.
-2. Attendance tab: pick any mob, Start camp. A ready check opens; close it with the button. Standings shows the tick.
-3. Timers tab: tick "Show every mob", pick one, "Killed now". The clock moogle starts counting down.
+2. Attendance tab: pick any mob, Start camp. A ready check opens; close it with the button. The DKP tab shows the tick.
+3. ToDs tab: tick "Show every mob", pick one, "Killed now". The clock moogle starts counting down.
 4. Settings: every chat feature can be switched off; "Post announcements" off makes the addon silent in chat.

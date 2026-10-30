@@ -33,7 +33,7 @@ The full command list is in the addon's Help tab and in `/hkp help`. Mob aliases
 
 ## Outside the game: the REST API
 
-A shared book lives on the sync server. The linkshell owner or an admin makes API keys in HeaphKP's Linkshells tab
+A shared book lives on the sync server. The linkshell owner or an admin makes API keys in HeaphKP's Settings > Server
 (label + role). A key is shown once. On the server it is the identity `bot:<label>`, so everything a bot writes is
 signed as that bot, never as a player, and it can be revoked like any member.
 
