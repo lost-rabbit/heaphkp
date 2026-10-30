@@ -1,0 +1,12 @@
+# Ashita per-player data never belongs in the repo
+config/
+*.bak
+*.bak_*
+*.tmp
+# test harness scratch
+tests/install_*/
+tests/__pycache__/
+tests/fake_install/
+# wrangler local state
+server/.wrangler/
+server/node_modules/

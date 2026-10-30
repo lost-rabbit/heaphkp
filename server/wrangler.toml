@@ -1,0 +1,9 @@
+name = "lsdkp"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# Created at deploy time with: npx wrangler@4 d1 create lsdkp-db  (then paste the id here)
+[[d1_databases]]
+binding = "DB"
+database_name = "lsdkp-db"
+database_id = "00000000-0000-0000-0000-000000000000"
