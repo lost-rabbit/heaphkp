@@ -23,6 +23,7 @@ python test_server.py        # the API: register, invite, join, roles, revocatio
 python test_sync.py          # two players share one book; roles enforced; undo propagates
 python test_share.py         # a viewer shares ToDs; the DO NOT SHARE switch; 1-hour codes
 python test_identity.py      # a tampered client cannot write as someone else; a stolen code for another name is refused
+python test_api.py           # API keys, GET /v1/book, bot writes signed as bot:<label>, read-only and revoked keys, state.json
 ```
 
 The game runs LuaJIT 5.1; the harness runs Lua 5.5 and patches `%z` for it. Rendering, D3D textures and the real

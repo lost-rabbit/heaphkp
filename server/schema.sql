@@ -54,3 +54,27 @@ CREATE TABLE IF NOT EXISTS regs (
     n   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (ip, day)
 );
+
+-- API keys for bots and outside tools. A key acts as the name 'bot:<label>' with a role of its own.
+CREATE TABLE IF NOT EXISTS apikeys (
+    hash      TEXT PRIMARY KEY,
+    ls_id     INTEGER NOT NULL,
+    name      TEXT NOT NULL,
+    label     TEXT NOT NULL,
+    role      TEXT NOT NULL,
+    created   INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    by        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS keyhits (
+    hash   TEXT NOT NULL,
+    minute INTEGER NOT NULL,
+    n      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (hash, minute)
+);
+-- The materialised book per linkshell (replayed from ops; a cache, safe to delete).
+CREATE TABLE IF NOT EXISTS snapshots (
+    ls_id INTEGER PRIMARY KEY,
+    seq   INTEGER NOT NULL,
+    json  TEXT NOT NULL
+);

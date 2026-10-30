@@ -1,0 +1,523 @@
+[
+{
+"name": "Fafnir",
+"zone": "Dragon's Aery",
+"group": "HNM",
+"hq": "Nidhogg",
+"hqRule": "separate pop: Cup of Sweet Tea at the same ??? (Fafnir drops it, uncommon)",
+"forced": true,
+"pop": "Jug of Honey Wine (trade to ??? qm_fafnir)",
+"note": "??? hides 30 s after a pop; neither can pop while the other is up"
+},
+{
+"name": "Nidhogg",
+"zone": "Dragon's Aery",
+"group": "HNM",
+"forced": true,
+"pop": "Cup of Sweet Tea (trade to ??? qm_fafnir)",
+"sharesWith": "Fafnir",
+"note": "shares the ??? with Fafnir; no shared timer because both are force-pop"
+},
+{
+"name": "Adamantoise",
+"zone": "Valley of Sorrows",
+"group": "HNM",
+"hq": "Aspidochelone",
+"hqRule": "separate pop: Clump of Red Pondweed at the same ???",
+"forced": true,
+"pop": "Clump of Blue Pondweed (trade to ??? qm_adamantoise)"
+},
+{
+"name": "Aspidochelone",
+"zone": "Valley of Sorrows",
+"group": "HNM",
+"forced": true,
+"pop": "Clump of Red Pondweed (trade to ??? qm_adamantoise)",
+"sharesWith": "Adamantoise"
+},
+{
+"name": "Behemoth",
+"zone": "Behemoth's Dominion",
+"group": "HNM",
+"hq": "King Behemoth",
+"hqRule": "separate pop: Savory Shank at the same ???",
+"forced": true,
+"pop": "Beastly Shank (trade to ??? qm_behemoth)"
+},
+{
+"name": "King Behemoth",
+"zone": "Behemoth's Dominion",
+"group": "HNM",
+"forced": true,
+"pop": "Savory Shank (trade to ??? qm_behemoth)",
+"sharesWith": "Behemoth"
+},
+{
+"name": "King Arthro",
+"zone": "Jugner Forest",
+"group": "HNM",
+"minS": 75900,
+"maxS": 86700,
+"windowS": 1800,
+"forced": false,
+"note": "timer is on the 10 Knight Crabs (75900 + 0..6 x 1800); kill all 10 crabs and King Arthro pops. Boot (no save): crabs 900-11700 s in 30-min steps"
+},
+{
+"name": "Simurgh",
+"zone": "Rolanberry Fields",
+"group": "HNM",
+"minS": 75600,
+"maxS": 86400,
+"forced": false,
+"note": "era old-timer module replaces base 1-2 h; same roll at boot"
+},
+{
+"name": "Roc",
+"zone": "Sauromugue Champaign",
+"group": "HNM",
+"minS": 75600,
+"maxS": 86400,
+"forced": false,
+"note": "era old-timer module replaces base 1-2 h; same roll at boot"
+},
+{
+"name": "Serket",
+"zone": "Garlaige Citadel",
+"group": "HNM",
+"minS": 75600,
+"maxS": 86400,
+"forced": false,
+"note": "same roll at boot; Phoenix only changes model/animations (original_serket.lua)"
+},
+{
+"name": "Bloodsucker",
+"zone": "Bostaunieux Oubliette",
+"group": "HNM",
+"minS": 259200,
+"maxS": 259200,
+"forced": false,
+"note": "Bloodsucker_NM (lv70-73 NM, not the 300 s trash leech of the same name). Fixed 72 h, also at boot"
+},
+{
+"name": "Vrtra",
+"zone": "King Ranperre's Tomb",
+"group": "HNM",
+"minS": 259200,
+"maxS": 432000,
+"windowS": 1800,
+"forced": false,
+"note": "144-240 x 1800 s (3-5 days in 30-min steps); same roll at boot"
+},
+{
+"name": "Ash Dragon",
+"zone": "Ifrit's Cauldron",
+"group": "HNM",
+"minS": 259200,
+"maxS": 432000,
+"forced": false,
+"note": "3-5 days continuous; same roll at boot"
+},
+{
+"name": "Cactrot Rapido",
+"zone": "Eastern Altepa Desert",
+"group": "NM",
+"minS": 172800,
+"maxS": 259200,
+"forced": false,
+"note": "2-3 days; same roll at boot"
+},
+{
+"name": "Guivre",
+"zone": "Kuftal Tunnel",
+"group": "HNM",
+"minS": 64800,
+"maxS": 86400,
+"forced": false,
+"note": "18-24 h, random spawn point; boot 900-10800 s"
+},
+{
+"name": "Shikigami Weapon",
+"zone": "Ro'Maeve",
+"group": "NM",
+"minS": 76500,
+"maxS": 76500,
+"forced": false,
+"note": "fixed yaml respawn 76500 (21 h 15 m); no script roll; spawns invisible and patrols"
+},
+{
+"name": "King Vinegarroon",
+"zone": "Western Altepa Desert",
+"group": "HNM",
+"minS": 75600,
+"maxS": 75600,
+"forced": false,
+"note": "window opens 21 h after ToD, then needs EARTH weather (dust/sand storm); Phoenix holds him at boot until a weather change"
+},
+{
+"name": "Kreutzet",
+"zone": "Cape Teriggan",
+"group": "NM",
+"minS": 32400,
+"maxS": 43200,
+"forced": false,
+"note": "9-12 h, then needs WIND weather; pops 30-150 s after wind starts (Zone.lua:54); same roll at boot"
+},
+{
+"name": "Yagudo Avatar",
+"zone": "Castle Oztroja",
+"group": "NM",
+"minS": 77400,
+"maxS": 86400,
+"windowS": 1800,
+"hq": "Tzee Xicu the Manifest",
+"hqRule": "on NQ despawn: kills = [PH] count+1; HQ takes the next window if kills>=7, or kills>=2 and 20% roll, AND 3 days have passed since last HQ kill ([POP] var). Else NQ again",
+"forced": false,
+"note": "NQ->next: 75600 + 1..6 x 1800. After an HQ kill the NQ returns in 75600-86400 (continuous). Boot (no save) NQ 900-10800 s"
+},
+{
+"name": "Tzee Xicu the Manifest",
+"zone": "Castle Oztroja",
+"group": "NM",
+"minS": 75600,
+"maxS": 86400,
+"forced": false,
+"sharesWith": "Yagudo Avatar",
+"note": "HQ kill resets [PH] counter, locks HQ for 259200 s, NQ back in 75600-86400"
+},
+{
+"name": "Orcish Overlord",
+"zone": "Monastic Cavern",
+"group": "NM",
+"minS": 77400,
+"maxS": 86400,
+"windowS": 1800,
+"hq": "Overlord Bakgodek",
+"hqRule": "same as Yagudo Avatar: kills>=7, or >=2 with 20%, and 3-day HQ lockout ([POP]Overlord_Bakgodek)",
+"forced": false,
+"note": "quest copies (UNDERSTANDING_OVERLORD) do not count. Boot NQ 77400-86400 in 30-min steps"
+},
+{
+"name": "Overlord Bakgodek",
+"zone": "Monastic Cavern",
+"group": "NM",
+"minS": 75600,
+"maxS": 86400,
+"forced": false,
+"sharesWith": "Orcish Overlord",
+"note": "HQ kill resets counter, 3-day HQ lockout, NQ back in 75600-86400"
+},
+{
+"name": "Diamond Quadav",
+"zone": "Qulun Dome",
+"group": "NM",
+"minS": 77400,
+"maxS": 86400,
+"windowS": 1800,
+"hq": "Za'Dha Adamantking",
+"hqRule": "same as Yagudo Avatar: kills>=7, or >=2 with 20%, and 3-day HQ lockout ([POP]Za_Dha_Adamantking)",
+"forced": false,
+"note": "quest copies do not count. Boot NQ 77400-86400 in 30-min steps"
+},
+{
+"name": "Za'Dha Adamantking",
+"zone": "Qulun Dome",
+"group": "NM",
+"minS": 75600,
+"maxS": 86400,
+"forced": false,
+"sharesWith": "Diamond Quadav",
+"note": "HQ kill resets counter, 3-day HQ lockout, NQ back in 75600-86400"
+},
+{
+"name": "Tiamat",
+"zone": "Attohwa Chasm",
+"group": "CoP",
+"minS": 259200,
+"maxS": 432000,
+"windowS": 1800,
+"forced": false,
+"note": "144-240 x 1800 s (3-5 days in 30-min steps); same roll at boot"
+},
+{
+"name": "Jormungand",
+"zone": "Uleguerand Range",
+"group": "CoP",
+"minS": 259200,
+"maxS": 432000,
+"windowS": 1800,
+"forced": false,
+"note": "144-240 x 1800 s (3-5 days in 30-min steps); same roll at boot"
+},
+{
+"name": "Xolotl",
+"zone": "Attohwa Chasm",
+"group": "CoP",
+"minS": 75600,
+"maxS": 86400,
+"forced": false,
+"note": "night-only spawn type (yaml at_night, mobs.yaml:1715): pops at night once the window is open. Long timer only if KILLED; a dawn despawn resets to 1 s. Same roll at boot"
+},
+{
+"name": "Cerberus",
+"zone": "Mount Zhayolm",
+"group": "ToAU",
+"minS": 172800,
+"maxS": 259200,
+"windowS": 3600,
+"forced": false,
+"note": "48-72 x 3600 s (1-hour steps); same roll at boot"
+},
+{
+"name": "Hydra",
+"zone": "Wajaom Woodlands",
+"group": "ToAU",
+"minS": 172800,
+"maxS": 259200,
+"windowS": 3600,
+"forced": false,
+"note": "48-72 x 3600 s (1-hour steps); same roll at boot"
+},
+{
+"name": "Khimaira",
+"zone": "Caedarva Mire",
+"group": "ToAU",
+"minS": 172800,
+"maxS": 259200,
+"windowS": 3600,
+"forced": false,
+"note": "48-72 x 3600 s (1-hour steps); Phoenix moves him back to his original bowl (phoenix caedarva_mire/mobs.yaml:171, pxi_nm_spawn_points.lua)"
+},
+{
+"name": "Faust",
+"zone": "The Shrine of Ru'Avitau",
+"group": "Sky",
+"minS": 10800,
+"maxS": 21600,
+"forced": false,
+"note": "3-6 h after kill; at boot uses yaml base 10800"
+},
+{
+"name": "Mother Globe",
+"zone": "The Shrine of Ru'Avitau",
+"group": "Sky",
+"minS": 10800,
+"maxS": 21600,
+"forced": false,
+"note": "3-6 h after kill; at boot uses yaml base 10800"
+},
+{
+"name": "Zipacna",
+"zone": "Ve'Lugannon Palace",
+"group": "Sky",
+"minS": 10800,
+"maxS": 21600,
+"forced": false,
+"note": "3-6 h after kill; at boot uses yaml base 10800"
+},
+{
+"name": "Steam Cleaner",
+"zone": "Ve'Lugannon Palace",
+"group": "Sky",
+"minS": 7200,
+"maxS": 7200,
+"forced": false,
+"note": "lottery, not a fixed pop: after 2 h, each eligible Detector repop has a 10% chance to be Steam Cleaner (Detector.lua:291). maxS = lottery open, not a guarantee"
+},
+{
+"name": "Genbu",
+"zone": "Ru'Aun Gardens",
+"group": "Sky",
+"forced": true,
+"pop": "Gem of the North + Winterstone (???  qm1)"
+},
+{
+"name": "Seiryu",
+"zone": "Ru'Aun Gardens",
+"group": "Sky",
+"forced": true,
+"pop": "Gem of the East + Springstone (??? qm2)"
+},
+{
+"name": "Byakko",
+"zone": "Ru'Aun Gardens",
+"group": "Sky",
+"forced": true,
+"pop": "Gem of the West + Autumnstone (??? qm3)"
+},
+{
+"name": "Suzaku",
+"zone": "Ru'Aun Gardens",
+"group": "Sky",
+"forced": true,
+"pop": "Gem of the South + Summerstone (??? qm4)"
+},
+{
+"name": "Kirin",
+"zone": "The Shrine of Ru'Avitau",
+"group": "Sky",
+"forced": true,
+"pop": "Seal of Genbu + Seal of Byakko + Seal of Seiryu + Seal of Suzaku (??? qm2, pops claimed to trader)",
+"note": "the Ru'Aun Gardens Kirin is TVR content (Strange Happenings) and not in scope"
+},
+{
+"name": "Ullikummi",
+"zone": "The Shrine of Ru'Avitau",
+"group": "Sky",
+"forced": true,
+"pop": "Chunk of Diorite (??? qm3)"
+},
+{
+"name": "Jailer of Hope",
+"zone": "Al'Taieu",
+"group": "Sea",
+"forced": true,
+"pop": "First Virtue + Deed of Placidity + HQ Phuabo Organ"
+},
+{
+"name": "Jailer of Justice",
+"zone": "Al'Taieu",
+"group": "Sea",
+"forced": true,
+"pop": "Second Virtue + Deed of Moderation + HQ Xzomit Organ"
+},
+{
+"name": "Jailer of Prudence",
+"zone": "Al'Taieu",
+"group": "Sea",
+"forced": true,
+"pop": "Third Virtue + Deed of Sensibility + HQ Hpemde Organ",
+"note": "pops two Jailers of Prudence"
+},
+{
+"name": "Jailer of Love",
+"zone": "Al'Taieu",
+"group": "Sea",
+"forced": true,
+"pop": "Fourth Virtue + Fifth Virtue + Sixth Virtue",
+"note": "AV follow-up disabled on Phoenix"
+},
+{
+"name": "Jailer of Faith",
+"zone": "The Garden of Ru'Hmet",
+"group": "Sea",
+"forced": true,
+"pop": "HQ Euvhi Organ (??? moves between 5 spots after each kill)"
+},
+{
+"name": "Jailer of Fortitude",
+"zone": "The Garden of Ru'Hmet",
+"group": "Sea",
+"forced": true,
+"pop": "12x Ghrah M Chip (??? moves between 5 spots after each kill)"
+},
+{
+"name": "Jailer of Temperance",
+"zone": "Grand Palace of Hu'Xzoi",
+"group": "Sea",
+"minS": 900,
+"maxS": 900,
+"forced": false,
+"note": "PH lottery: killing the currently picked Eo'zdei (PH re-picked every 15 min) pops him if 15 min have passed since his last death. Cooldown is a local var: resets on restart"
+},
+{
+"name": "Ouryu",
+"zone": "Riverne - Site #A01",
+"group": "CoP",
+"forced": true,
+"pop": "Cloud Evoker (BCNM Ouryu Cometh, 18 players, 60 min)"
+},
+{
+"name": "Bahamut",
+"zone": "Riverne - Site #B01",
+"group": "CoP",
+"forced": true,
+"pop": "Monarch's Orb (Wyrmking Descends, 18 players, 60 min)",
+"note": "entry needs the Jeuno quest Storms of Fate completed"
+},
+{
+"name": "Overlord's Tombstone",
+"zone": "Dynamis - San d'Oria",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass"
+},
+{
+"name": "Gu'Dha Effigy",
+"zone": "Dynamis - Bastok",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass"
+},
+{
+"name": "Tzee Xicu Idol",
+"zone": "Dynamis - Windurst",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass"
+},
+{
+"name": "Goblin Golem",
+"zone": "Dynamis - Jeuno",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass"
+},
+{
+"name": "Angra Mainyu",
+"zone": "Dynamis - Beaucedine",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass"
+},
+{
+"name": "Dynamis Lord",
+"zone": "Dynamis - Xarcabard",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass",
+"note": "phoenix_scope.zone_ok wrongly blocks \"dynamis_xarcabard\" (Dynamis Divergence regex); the zone is live"
+},
+{
+"name": "Cirrate Christelle",
+"zone": "Dynamis - Valkurm",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass (Hieroglyphics entry)"
+},
+{
+"name": "Apocalyptic Beast",
+"zone": "Dynamis - Buburimu",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass (Hieroglyphics entry)"
+},
+{
+"name": "Antaeus",
+"zone": "Dynamis - Qufim",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass (Hieroglyphics entry)"
+},
+{
+"name": "Dynamis-Tavnazia",
+"zone": "Dynamis - Tavnazia",
+"group": "Dynamis",
+"forced": true,
+"pop": "Timeless Hourglass (Hieroglyphics entry)",
+"note": "run-level event: the Phoenix mob table names no BOSS for Tavnazia (Nightmare Bugard/Antlion/Worm are tagged \"Boss\" in dynamis_mobs_tav.lua:267). Log the run manually. 15-min base limit (settings_era.lua:14)"
+},
+{
+"name": "Proto-Ultima",
+"zone": "Temenos",
+"group": "Limbus",
+"forced": true,
+"pop": "Central Temenos 4th Floor: KI Cosmo-Cleanse + White Card; Silver + Cerulean + Orchid Chip"
+},
+{
+"name": "Proto-Omega",
+"zone": "Apollyon",
+"group": "Limbus",
+"forced": true,
+"pop": "Central Apollyon: KI Cosmo-Cleanse + Red or Black Card; Smalt + Smoky + Charcoal + Magenta Chip"
+}
+]

@@ -82,6 +82,16 @@ Mob aliases work everywhere a mob name does: `ka` King Arthro, `kb` King Behemot
 
 Your own `!event start ka` typed into linkshell or party chat also runs, so the LS sees it.
 
+## For other addons and bots
+
+- **Other Ashita addons** read `config\addons\heaphkp\state.json` (standings, windows, the running event and
+  auction, rewritten every 5 s) and drive HeaphKP with its own commands (`/hkp tod ka now`, `/hkp add Name 5`).
+- **Bots, websites, spreadsheets** use API keys made in the Linkshells tab (viewer = read, officer = write). A key
+  is the identity `bot:<label>` on the server: everything it writes is signed as that bot and it can be revoked
+  like a member. `GET /v1/book`, `POST /v1/tod`, `POST /v1/adjust`, `POST /v1/award`.
+
+Details and examples: [docs/API.md](docs/API.md).
+
 ## Tests
 
 `tests/` holds an offline harness that runs the addon in a fake Ashita (Python + lupa) and, for sync, a two-client run

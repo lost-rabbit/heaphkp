@@ -20,6 +20,8 @@ timers, all in one ImGui window. Optionally several members share one book throu
 
 ## What it writes / sends
 
+- `config\addons\heaphkp\state.json`, rewritten every 5 s with the book's standings and timers, so other addons on the
+  same PC can read them. Local file only.
 - Files under `config\addons\heaphkp\` and a copy of a screenshot (taken with Ashita's own `/screenshot`) when a tracked
   drop lands. Screenshots can be turned off.
 - Chat lines, every one of them optional and off-able in Settings: ready-check announcements (a timed post every N
@@ -47,6 +49,9 @@ timers, all in one ImGui window. Optionally several members share one book throu
 - Only the book's own linkshell hears its chat posts; the addon refuses to post if that LS is not equipped.
 - A **SHARE TOD / DO NOT SHARE** switch stops a client from sending the ToDs it sees.
 - Tokens are stored hashed on the server. The TLS connection verifies the server certificate.
+- Outside tools (a Discord bot, a website) use API keys an admin makes in the window. A key is the identity
+  `bot:<label>` on the server, never a character name, so a bot's writes are always visibly a bot's, and it is
+  revoked like a member. Keys are stored hashed and rate limited. Nothing about the API touches the game client.
 
 ## Assets
 

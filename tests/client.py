@@ -112,7 +112,7 @@ package.preload['imgui'] = function() return imgui end
         src = src.replace('%z', '\\0').replace('local db = defaults();', 'db = defaults();').replace('local access = {', 'access = {')
         for fn in ('register_ls', 'join_ls', 'send_invite', 'switch_book', 'equipped_ls', 'reload_from_server', 'set_role', 'place_bid', 'can_manage', 'read_only', 'adjust', 'emit', 'set_tod', 'new_id'):
             src = src.replace('local function %s(' % fn, 'function %s(' % fn)
-        src = src.replace('local alerts = {};', 'alerts = {};').replace('local lsMsg = nil;', 'lsMsg = nil;').replace("local bookKey = 'local';", "bookKey = 'local';").replace('local equipped_ls;', '').replace('local pendingInvites = {};', 'pendingInvites = {};')
+        src = src.replace('local alerts = {};', 'alerts = {};').replace('local HK = {};', 'HK = {};').replace('local lsMsg = nil;', 'lsMsg = nil;').replace("local bookKey = 'local';", "bookKey = 'local';").replace('local equipped_ls;', '').replace('local pendingInvites = {};', 'pendingInvites = {};')
         L.eval('function(s) return load(s, "=heaphkp") end')(src)()
         self.set_party(party)
         for i, (iid, lsname) in enumerate(ls_items):

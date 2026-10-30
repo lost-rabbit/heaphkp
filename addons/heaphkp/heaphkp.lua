@@ -37,7 +37,7 @@
 
 addon.name    = 'heaphkp';
 addon.author  = 'Heaph';
-addon.version = '1.3.0';
+addon.version = '1.4.0';
 addon.desc    = 'HeaphKP: linkshell DKP shared between officers, auctions, ready checks, drop screenshots, HNM windows.';
 addon.link    = '';
 
@@ -120,7 +120,7 @@ local function defaults()
         members = {}, perms = {}, prices = {}, custom = {}, tods = {}, autoCamp = {},
         history = {}, drops = {}, nextId = 1,
         event = nil, auction = nil, rc = nil,
-        seq = 0, outbox = {}, sent = {}, live = {}, notified = {}, seen = {}, aliases = {},   -- sync state (shared books); seen = the registry
+        seq = 0, outbox = {}, sent = {}, live = {}, notified = {}, seen = {}, aliases = {}, keys = {},   -- sync state (shared books); seen = the registry
     };
 end
 
@@ -1031,6 +1031,49 @@ HK.backfill = function (verbose)
     return found;
 end
 
+-- config\addons\heaphkp\state.json, rewritten every 5 s: what other addons (and anything else on this PC) can
+-- read. Commands are the write side: any addon can queue '/hkp tod ka now', '/hkp add Name 5 why', '/hkp event start kb'.
+HK.write_state = function ()
+    local now = os.time();
+    local bk = access.books[bookKey];   -- book() is defined further down the file
+    local st = { version = addon.version, time = now, me = me(), book = { name = bk and bk.ls or 'This PC only', role = bk and bk.role or 'admin', shared = synced() } };
+    st.standings = {};
+    for _, r in ipairs(sorted_members()) do st.standings[#st.standings + 1] = { name = r.name, dkp = r.m.dkp, earned = r.m.earned, spent = r.m.spent, ticks = r.m.ticks }; end
+    st.timers = {};
+    for _, m in ipairs(mobs) do
+        local t, e = db.tods[m.key], m.e;
+        if (t ~= nil) then
+            local row = { mob = m.key, form = t.form, zone = e.zone or '', tod = t.t, by = t.by };
+            if (e.minS ~= nil) and (not e.forced) then
+                row.opens, row.closes = t.t + e.minS, t.t + (e.maxS or e.minS);
+                local txt, state = window_text(e, t.t, now);
+                row.state, row.text = ({ wait = 'waiting', open = 'open', late = 'closed', dim = 'no-timer' })[state] or state, txt;
+            else row.state = e.forced and 'forced' or 'no-timer'; end
+            st.timers[#st.timers + 1] = row;
+        end
+    end
+    table.sort(st.timers, function (a, b) return (a.opens or 1e12) < (b.opens or 1e12); end);
+    local ev, rc, a = db.event, db.rc, db.auction;
+    if ev then st.event = { name = ev.name, mob = ev.mob, started = ev.started, ticks = ev.ticks, nextRc = ev.nextRc }; end
+    if rc then st.readyCheck = { closes = rc.closes, answered = (function () local c = 0; for _ in pairs(rc.replied) do c = c + 1; end; return c; end)() }; end
+    if a then
+        local best = high_bid(a);
+        st.auction = { item = a.item, min = a.min, ends = a.ends, sealed = a.sealed, high = (not a.sealed and best) and best.amt or nil, bidder = (not a.sealed and best) and best.name or nil };
+    end
+    st.drops, st.history = {}, {};
+    for i = math.max(1, #db.drops - 19), #db.drops do local d = db.drops[i]; st.drops[#st.drops + 1] = { t = d.t, item = d.item, mob = d.mob, awarded = d.awarded, price = d.price, lotted = d.lotted }; end
+    for i = math.max(1, #db.history - 19), #db.history do local h = db.history[i]; st.history[#st.history + 1] = { t = h.t, kind = h.kind, by = h.by, text = h.text, undone = h.undone }; end
+    local okE, raw = pcall(json.encode, st);
+    if (not okE) then return; end
+    local path = ROOT .. '\\state.json';
+    local f = io.open(path .. '.tmp', 'w');
+    if (f == nil) then return; end
+    f:write(raw);
+    f:close();
+    os.remove(path);
+    os.rename(path .. '.tmp', path);
+end
+
 -- Runs one command. `who` is the player asking (nil = you at the keyboard). Returns nothing; replies by chat/print.
 local function run(cmd, rest, who)
     local by = who and N(who) or me();
@@ -1433,6 +1476,7 @@ local function sync_tick()
             db.seq = math.max(db.seq or 0, op.seq or 0);
         end
         applying = false;
+        if (r.keys ~= nil) then db.keys = r.keys; end
         db.perms, db.seen = {}, {};   -- the server's roles are the truth; seen = who has actually joined
         for _, x in ipairs(r.roles or {}) do
             db.perms[N(x.name)] = x.role;
@@ -1522,6 +1566,26 @@ local function send_invite(name, role)
     end);
 end
 
+-- API keys for bots and outside tools (owner/admin). A key is the name 'bot:<label>' on the server.
+HK.make_key = function (label, role)
+    local b = book();
+    if (net == nil) or (b == nil) or (server() == '') then return; end
+    net.post(server() .. '/keys', { token = b.token, label = label, role = role }, function (ok, _, r)
+        if (not ok) then lsMsg = (type(r) == 'table' and r.error) or tostring(r); return; end
+        ui.newKey[1] = r.key;
+        lsMsg = ('Key for %s made (%s). Copy it now: it is shown once.'):format(r.name, r.role);
+        sync.next = 0;
+    end);
+end
+HK.revoke_key = function (label)
+    local b = book();
+    if (net == nil) or (b == nil) or (server() == '') then return; end
+    net.post(server() .. '/keys/revoke', { token = b.token, label = label }, function (ok, _, r)
+        lsMsg = ok and ('Key %s revoked.'):format(label) or ((type(r) == 'table' and r.error) or tostring(r));
+        sync.next = 0;
+    end);
+end
+
 -- Live status (event, ready check, auction) so other officers see what this client is running.
 local liveSig = '';
 local function live_tick()
@@ -1583,7 +1647,8 @@ local ui = {
     priceItem = { '' }, priceMin = { 0 },
     trackName = { '' }, trackLo = { 0 }, trackHi = { 0 },
     goTab = nil,
-    S = 1, font = nil, dragging = false,   -- size factor from the font (draw()), Verdana Bold, moogle drag state
+    S = 1, font = nil, dragging = false,
+    keyLabel = { '' }, keyRole = 'viewer', newKey = { '' },   -- size factor from the font (draw()), Verdana Bold, moogle drag state
 };
 function ui.px(n) return math.floor(n * ui.S + 0.5); end
 
@@ -2482,6 +2547,25 @@ local function tab_linkshells()
         if imgui.IsItemHovered() then imgui.SetTooltip("Throws away this PC's copy and pulls the whole book again."); end
     end
 
+    if (bookKey ~= 'local') and can_manage() then
+        section('API keys (bots, Discord, websites)');
+        label('A key reads the book (viewer) or also writes ToDs, adjustments and awards (officer), signed as bot:<label>.');
+        for _, k in ipairs(db.keys or {}) do
+            imgui.TextColored(C.text, k.name); imgui.SameLine(ui.px(170));
+            imgui.TextColored(C.dim, ('%s, used %s'):format(k.role, (k.last_seen or 0) > 0 and (dur(os.time() - k.last_seen) .. ' ago') or 'never'));
+            imgui.SameLine(ui.px(360));
+            if imgui.SmallButton('Revoke##k' .. k.name) then HK.revoke_key(k.label); end
+        end
+        imgui.SetNextItemWidth(ui.px(140)); imgui.InputTextWithHint('##klabel', 'Label, e.g. Discord', ui.keyLabel, 20);
+        imgui.SameLine(); ui.keyRole = combo('##krole', ui.keyRole, { 'viewer', 'officer' }, 90);
+        imgui.SameLine();
+        if button('Make key', ui.keyLabel[1] ~= '') then HK.make_key(ui.keyLabel[1], ui.keyRole); ui.keyLabel[1] = ''; end
+        if (ui.newKey[1] ~= '') then
+            imgui.TextColored(C.warn, 'New key (select and Ctrl+C; it will not be shown again):');
+            imgui.SetNextItemWidth(ui.px(420)); imgui.InputText('##knew', ui.newKey, 80);
+            imgui.SameLine(); if imgui.SmallButton('Hide') then ui.newKey[1] = ''; end
+        end
+    end
     section('Join with a code');
     imgui.SetNextItemWidth(ui.px(150)); imgui.InputTextWithHint('##jls', 'Linkshell name', ui.joinLs, 24);
     imgui.SameLine(); imgui.SetNextItemWidth(ui.px(110)); imgui.InputTextWithHint('##jcode', 'ABCD-EFGH', ui.joinCode, 12);
@@ -2974,6 +3058,7 @@ local function tick()
     pump();
     if (not HK.backfilled) and (me() ~= nil) then HK.backfilled = true; pcall(HK.backfill, false); end
     pcall(sync_tick);
+    if (os.clock() - (HK.stateAt or -99) >= 5) then HK.stateAt = os.clock(); pcall(HK.write_state); end
     live_tick();
     notify_tick();
     if dirty and (os.clock() - lastSave > 2) then save_db(); end
