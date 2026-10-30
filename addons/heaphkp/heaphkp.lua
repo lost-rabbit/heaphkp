@@ -37,7 +37,7 @@
 
 addon.name    = 'heaphkp';
 addon.author  = 'Heaph';
-addon.version = '1.4.1';
+addon.version = '1.5.0';
 addon.desc    = 'HeaphKP: linkshell DKP shared between officers, auctions, ready checks, drop screenshots, HNM windows.';
 addon.link    = '';
 
@@ -99,6 +99,7 @@ local function defaults()
             chatBids    = true,       -- "bid 120" in chat bids
             chatBalance = true,       -- "!dkp" in chat gets a balance tell
             chatCommands = false,     -- officers' !auction / !tod / ... from chat (off: the menu does it all)
+            answerRollCall = true,    -- tell a keeper who asks "[DKP] Roll call" that you run HeaphKP
             showPill    = true,       -- the small on-screen DKP button
             shareTod    = true,       -- send the ToDs you see to your LS book
             theme       = 'ffxi',     -- window style: ffxi | midnight | parchment | crystal
@@ -974,8 +975,15 @@ local function split_tod(rest)
     return table.concat(words, ' '), when;
 end
 
-local KNOWN = { camp = 1, event = 1, help = 1, commands = 1, backfill = 1, invite = 1, start = 1, stop = 1, rc = 1, auction = 1, bid = 1, close = 1, cancel = 1, award = 1, add = 1, adjust = 1,
+local KNOWN = { camp = 1, event = 1, help = 1, commands = 1, backfill = 1, invite = 1, rollcall = 1, start = 1, stop = 1, rc = 1, auction = 1, bid = 1, close = 1, cancel = 1, award = 1, add = 1, adjust = 1,
                 undo = 1, tod = 1, role = 1, price = 1, track = 1, export = 1 };
+
+HK.approve_join = function (name, role)
+    HK.joinReq = HK.joinReq or {};
+    add_member(name);
+    send_invite(name, role or 'viewer');
+    HK.joinReq[name] = nil;
+end
 
 HK.target_name = function ()
     local ok, name = pcall(function ()
@@ -995,14 +1003,14 @@ HK.help_lines = function (chat)
     if chat then
         return {
             '!event start <mob> | !event stop | !event auto <mob> | !rc | !auction <item> [min] | !close',
-            'bid <n> / bid max | here | !dkp | aliases: ka kb faf nid ada aspid sim serk tia jorm kv cerb khim',
+            'bid <n> / bid max | here | !dkp | !join heaphkp (ask to be added) | aliases: ka kb faf nid sim serk tia jorm kv cerb khim',
         };
     end
     return {
         '/hkp (window) | start <event> | stop | rc | event start <mob> | event stop | event auto <mob>',
         'auction <item> [min] | close | cancel | award <name> <price> <item> | add <name> <+/-n> [why]',
         'tod <mob> [now|21:43|-15m] | role <name> <role> | price <item> <min> | track <mob> <minH> <maxH>',
-        'invite <name|t> [viewer|officer|admin] (t = your target) | undo | export | backfill | help',
+        'invite <name|t> [viewer|officer|admin] (t = your target) | rollcall [t] (who has HeaphKP) | undo | export | backfill | help',
         'Mob aliases: ka kb behe faf nid ada aspid sim serk tia jorm kv cerb khim jol shiki bs kreu xol ya tzee oo dq dl',
     };
 end
@@ -1107,6 +1115,22 @@ local function run(cmd, rest, who)
     if (cmd == 'backfill') then
         if (who ~= nil) then return; end
         HK.backfill(true);
+        return;
+    end
+    if (cmd == 'rollcall') then
+        if (who ~= nil) then return; end   -- keeper only
+        local ask = '[DKP] Roll call: if you run HeaphKP it answers this for you.';
+        if (rest:lower() == 't') or (rest == '<t>') then
+            local tn = HK.target_name();
+            if (tn == nil) then print(TAG .. 'Target a player first.'); return; end
+            outq[#outq + 1] = ('/t %s %s'):format(tn, ask);
+            print(TAG .. ('Asked %s. Their answer shows on the Linkshells tab.'):format(tn));
+        else
+            HK.rollcall = {};
+            HK.rollcallAt = os.time();
+            post(ask:gsub('^%[DKP%] ', ''));
+            print(TAG .. 'Roll call posted. Answers show on the Linkshells tab.');
+        end
         return;
     end
     if (cmd == 'invite') then
@@ -1247,6 +1271,33 @@ local function on_chat(kind, from, msg)
     msg = clean(msg):gsub('^%s+', ''):gsub('%s+$', '');
     local low = msg:lower();
 
+    -- Roll call: a keeper asks the LS (or one player by tell) who runs HeaphKP; the addon answers for you by tell,
+    -- once per asker per 10 minutes. Off in Settings > Chat control if you would rather not.
+    if msg:find('^%[DKP%] Roll call') then
+        if (db.cfg.answerRollCall ~= false) and ((kind == CHAT_LS) or (kind == CHAT_LS2) or (kind == CHAT_TELL) or (kind == CHAT_PARTY)) then
+            HK.rcAnswered = HK.rcAnswered or {};
+            if (os.time() - (HK.rcAnswered[from] or 0) > 600) then
+                HK.rcAnswered[from] = os.time();
+                outq[#outq + 1] = ('/t %s [DKP] present %s'):format(from, addon.version);
+            end
+        end
+        return;
+    end
+    if ((low == '!join heaphkp') or (low == '!join hkp') or (low == '!join')) and ((kind == CHAT_LS) or (kind == CHAT_LS2) or (kind == CHAT_PARTY)) then
+        HK.joinReq = HK.joinReq or {};
+        if (HK.joinReq[from] == nil) then ui_badge = true; end
+        HK.joinReq[from] = os.time();
+        return;
+    end
+    if (kind == CHAT_TELL) then
+        local ver = msg:match('^%[DKP%] present (%S+)');
+        if (ver ~= nil) then
+            HK.rollcall = HK.rollcall or {};
+            HK.rollcall[from] = { ver = ver, t = os.time() };
+            ui_badge = true;
+            return;
+        end
+    end
     if (kind == CHAT_TELL) then
         local ls, role, code = msg:match('^%[DKP%] Invite: (%w+) as (%a+)%. Code ([%w%-]+)%.');
         if (ls ~= nil) then
@@ -2300,6 +2351,12 @@ local function tab_loot()
     end
     imgui.SameLine();
     if button('Open screenshot', d.shot ~= nil) then ashita.misc.open_url(d.shot); end
+    imgui.SameLine(); label('min price'); imgui.SameLine();
+    ui.lootMin = ui.lootMin or { 0 };
+    if (ui.lootMinFor ~= d.id) then ui.lootMinFor, ui.lootMin[1] = d.id, price_for(d.item); end
+    small_input_int('##lootmin', ui.lootMin, 60);
+    imgui.SameLine();
+    if button('Set', (not read_only()) and (ui.lootMin[1] ~= price_for(d.item))) then set_price(item_key(d.item), d.item, math.max(0, ui.lootMin[1])); end
     imgui.SameLine();
     if imgui.Button('Delete entry') then
         del_drop(d.id);
@@ -2352,6 +2409,7 @@ local function tab_settings()
         check('Officers can run things from chat (!auction, !tod, !award...)', 'chatCommands',
             'Off by default. When on, the roles below decide who can use which.');
         check('Answer people by tell', 'replyTells', 'Bid refusals, sealed-bid receipts and balances.');
+        check('Answer roll calls', 'answerRollCall', 'When a keeper posts "[DKP] Roll call", tell them you run HeaphKP (once per asker per 10 min).');
         check('Post HNM ToDs to the LS', 'todPost', 'Only while an event is running, and only from officers, admins and the owner. Everyone else just records them.');
 
         section('Bidding');
@@ -2588,6 +2646,64 @@ local function tab_linkshells()
         imgui.SameLine();
         if imgui.SmallButton('Reload from server') then reload_from_server(); end
         if imgui.IsItemHovered() then imgui.SetTooltip("Throws away this PC's copy and pulls the whole book again."); end
+    end
+
+    section('Who has HeaphKP?');
+    if imgui.Button('Ask the linkshell') then run('rollcall', ''); end
+    if imgui.IsItemHovered() then imgui.SetTooltip('Posts one line in the LS; everyone running HeaphKP answers you by tell.'); end
+    imgui.SameLine();
+    local tn = HK.target_name();
+    if button(tn and ('Ask target: ' .. tn) or 'Ask target', tn ~= nil) then run('rollcall', 't'); end
+    imgui.SameLine(); label('as'); imgui.SameLine();
+    ui.rcRole = combo('##rcrole', ui.rcRole or 'viewer', { 'viewer', 'officer', 'admin' }, 90);
+    local names = {};
+    for n in pairs(HK.rollcall or {}) do names[#names + 1] = n; end
+    table.sort(names);
+    if (#names == 0) then
+        label(HK.rollcallAt and ('No answers yet (asked %s ago).'):format(dur(os.time() - HK.rollcallAt)) or 'Nobody asked yet.');
+    else
+        local canInv = (bookKey ~= 'local') and can_manage();
+        local fresh = 0;
+        for _, n in ipairs(names) do
+            local a = HK.rollcall[n];
+            local inBook = (db.perms[n] ~= nil);
+            imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
+            imgui.TextColored(inBook and C.good or C.dim, inBook and ('in the book (%s)'):format(db.perms[n]) or ('has HeaphKP %s'):format(a.ver));
+            imgui.SameLine(ui.px(340));
+            if (not inBook) then
+                fresh = fresh + 1;
+                if button('Invite##rc' .. n, canInv) then add_member(n); send_invite(n, ui.rcRole or 'viewer'); end
+            end
+        end
+        if (fresh > 0) and button(('Invite all %d as %s'):format(fresh, ui.rcRole or 'viewer'), canInv) then
+            for _, n in ipairs(names) do if (db.perms[n] == nil) then add_member(n); send_invite(n, ui.rcRole or 'viewer'); end end
+        end
+        if (not canInv) then label(bookKey == 'local' and 'Share the book (Turn on DKP) to invite them.' or 'Only the owner or an admin invites.'); end
+        imgui.SameLine(); if imgui.SmallButton('Clear##rc') then HK.rollcall = {}; end
+    end
+
+    local reqs = {};
+    for n in pairs(HK.joinReq or {}) do reqs[#reqs + 1] = n; end
+    table.sort(reqs);
+    if (#reqs > 0) then
+        section(('Join requests (%d typed !join heaphkp)'):format(#reqs));
+        local canInv = (bookKey ~= 'local') and can_manage();
+        for _, n in ipairs(reqs) do
+            imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
+            if (db.perms[n] ~= nil) then
+                imgui.TextColored(C.good, ('already in the book (%s)'):format(db.perms[n]));
+                imgui.SameLine(); if imgui.SmallButton('Dismiss##jr' .. n) then HK.joinReq[n] = nil; end
+            else
+                imgui.TextColored(C.dim, ('asked %s ago'):format(dur(os.time() - HK.joinReq[n])));
+                imgui.SameLine(ui.px(340));
+                if button('Approve##jr' .. n, canInv) then HK.approve_join(n, ui.rcRole or 'viewer'); end
+                imgui.SameLine(); if imgui.SmallButton('Dismiss##jd' .. n) then HK.joinReq[n] = nil; end
+            end
+        end
+        if button(('Approve all as %s'):format(ui.rcRole or 'viewer'), canInv) then
+            for _, n in ipairs(reqs) do if (db.perms[n] == nil) then HK.approve_join(n, ui.rcRole or 'viewer'); else HK.joinReq[n] = nil; end end
+        end
+        if (not canInv) then label(bookKey == 'local' and 'Share the book (Turn on DKP) to approve them.' or 'Only the owner or an admin approves.'); end
     end
 
     if (bookKey ~= 'local') and can_manage() then
