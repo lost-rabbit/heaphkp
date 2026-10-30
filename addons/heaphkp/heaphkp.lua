@@ -37,7 +37,7 @@
 
 addon.name    = 'heaphkp';
 addon.author  = 'Heaph';
-addon.version = '1.4.0';
+addon.version = '1.4.1';
 addon.desc    = 'HeaphKP: linkshell DKP shared between officers, auctions, ready checks, drop screenshots, HNM windows.';
 addon.link    = '';
 
@@ -974,8 +974,22 @@ local function split_tod(rest)
     return table.concat(words, ' '), when;
 end
 
-local KNOWN = { camp = 1, event = 1, help = 1, commands = 1, backfill = 1, start = 1, stop = 1, rc = 1, auction = 1, bid = 1, close = 1, cancel = 1, award = 1, add = 1, adjust = 1,
+local KNOWN = { camp = 1, event = 1, help = 1, commands = 1, backfill = 1, invite = 1, start = 1, stop = 1, rc = 1, auction = 1, bid = 1, close = 1, cancel = 1, award = 1, add = 1, adjust = 1,
                 undo = 1, tod = 1, role = 1, price = 1, track = 1, export = 1 };
+
+HK.target_name = function ()
+    local ok, name = pcall(function ()
+        local t = AshitaCore:GetMemoryManager():GetTarget();
+        local idx = t:GetTargetIndex(t:GetIsSubTargetActive());
+        if (idx == nil) or (idx == 0) then return nil; end
+        local ent = AshitaCore:GetMemoryManager():GetEntity();
+        local flags = ent:GetSpawnFlags(idx) or 0;
+        if (flags % 2 ~= 1) then return nil; end   -- 0x01 = a player character
+        local n = ent:GetName(idx);
+        return (n ~= nil and n ~= '' and n ~= me()) and N(n) or nil;
+    end);
+    return ok and name or nil;
+end
 
 HK.help_lines = function (chat)
     if chat then
@@ -988,7 +1002,7 @@ HK.help_lines = function (chat)
         '/hkp (window) | start <event> | stop | rc | event start <mob> | event stop | event auto <mob>',
         'auction <item> [min] | close | cancel | award <name> <price> <item> | add <name> <+/-n> [why]',
         'tod <mob> [now|21:43|-15m] | role <name> <role> | price <item> <min> | track <mob> <minH> <maxH>',
-        'undo | export | backfill (ToDs from the last 24 h of your chat log) | help',
+        'invite <name|t> [viewer|officer|admin] (t = your target) | undo | export | backfill | help',
         'Mob aliases: ka kb behe faf nid ada aspid sim serk tia jorm kv cerb khim jol shiki bs kreu xol ya tzee oo dq dl',
     };
 end
@@ -1093,6 +1107,24 @@ local function run(cmd, rest, who)
     if (cmd == 'backfill') then
         if (who ~= nil) then return; end
         HK.backfill(true);
+        return;
+    end
+    if (cmd == 'invite') then
+        if (who ~= nil) then return; end   -- keeper only
+        local nm, role = rest:match('^(%S*)%s*(%a*)$');
+        if (nm == nil) or (nm == '') or (nm:lower() == 't') or (nm == '<t>') then nm = HK.target_name(); end
+        if (nm == nil) then print(TAG .. 'Target a player first, or give a name: /hkp invite <name> [role].'); return; end
+        if (not synced()) then
+            local _, k = member(nm);
+            record({ kind = 'roster', by = me(), text = 'added ' .. k .. ' to the roster' });
+            print(TAG .. ('%s added to the roster (This PC book; share the book to send invites).'):format(k));
+            return;
+        end
+        if (not can_manage()) then print(TAG .. 'Only the owner or an admin invites.'); return; end
+        role = (role ~= '') and role:lower() or 'viewer';
+        if (role ~= 'viewer') and (role ~= 'officer') and (role ~= 'admin') then print(TAG .. 'Role: viewer, officer or admin.'); return; end
+        add_member(nm);
+        send_invite(N(nm), role);
         return;
     end
     if (cmd == 'camp') then
@@ -1814,6 +1846,13 @@ local function tab_standings()
         record({ kind = 'roster', by = me(), text = 'added ' .. k .. ' to the roster' });
         ui.sel, ui.newName[1] = k, '';
     end
+    imgui.SameLine();
+    local tn = HK.target_name();
+    if button(tn and ('Add target: ' .. tn) or 'Add target', tn ~= nil) then
+        local k = add_member(tn);
+        record({ kind = 'roster', by = me(), text = 'added ' .. k .. ' to the roster' });
+        ui.sel = k;
+    end
     local f = ui.filter[1]:lower();
     if imgui.BeginTable('##standings', 6, TABLE_FLAGS, { 0, ui.sel and -ui.px(128) or 0 }) then
         imgui.TableSetupScrollFreeze(0, 1);
@@ -2374,6 +2413,10 @@ local function tab_settings()
                 imgui.SameLine(); ui.permRole = combo('##prole', ui.permRole, { 'viewer', 'officer', 'admin' }, 100);
                 imgui.SameLine();
                 if button('Send invite', valid_name(ui.permName)) then send_invite(ui.permName, ui.permRole); end
+                imgui.SameLine();
+                local tn = HK.target_name();
+                if button(tn and ('Invite target: ' .. tn) or 'Invite target', tn ~= nil) then add_member(tn); send_invite(tn, ui.permRole); end
+                if imgui.IsItemHovered() then imgui.SetTooltip('The player you have targeted gets the role picked on the left.'); end
             end
         else
             label(('You (%s) are always admin. Anyone not listed here is a member. Roles only matter for chat control.'):format(me() or '?'));

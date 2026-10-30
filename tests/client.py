@@ -74,11 +74,14 @@ local I = {
     return { Slot = slot, Index = 0 }
   end,
 }
-local E = { GetName = function(_, i) return entnames[i] end, GetSpawnFlags = function(_, i) return 0x10 end }
+entflags = {}
+tgt = 0
+local E = { GetName = function(_, i) return entnames[i] end, GetSpawnFlags = function(_, i) return entflags[i] or 0x10 end }
+local TG = { GetTargetIndex = function() return tgt end, GetIsSubTargetActive = function() return false end }
 entnames = { [100] = 'Fafnir' }
 AshitaCore = {
   GetInstallPath = function() return INSTALL .. '\\' end,
-  GetMemoryManager = function() return { GetParty = function() return P end, GetEntity = function() return E end, GetInventory = function() return I end } end,
+  GetMemoryManager = function() return { GetParty = function() return P end, GetEntity = function() return E end, GetInventory = function() return I end, GetTarget = function() return TG end } end,
   GetChatManager = function() return { QueueCommand = function(_, m, c) sent[#sent+1] = c end } end,
   GetResourceManager = function() return { GetItemById = function(_, id) return { Name = { ({[1]='Ridill'})[id] or ('X'..id) } } end, GetString = function() return nil end } end,
 }
@@ -143,6 +146,12 @@ package.preload['imgui'] = function() return imgui end
         self.run('packet_in', self.L.table_from({'id': 0x17, 'data': data.decode('latin-1')}))
 
     def text(self, s): self.run('text_in', self.L.table_from({'message': s, 'injected': False}))
+
+    def target(self, name, player=True):
+        """Put a player (or mob) under the cursor."""
+        Client._next_idx += 1
+        idx = Client._next_idx
+        self.L.execute("entnames[%d] = '%s'; entflags[%d] = %d; tgt = %d" % (idx, name, idx, 0x01 if player else 0x10, idx))
 
     _next_idx = 300
     def kill(self, mob, msg=6):
