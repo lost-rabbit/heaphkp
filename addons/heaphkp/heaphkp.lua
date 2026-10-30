@@ -2819,7 +2819,7 @@ end
 
 local TABS = {
     { 'DKP', tab_standings }, { 'Auction', tab_auction }, { 'ToDs', tab_timers }, { 'Attendance', tab_attendance },
-    { 'Loot', tab_loot }, { 'Members', tab_members }, { 'Linkshells', tab_linkshells }, { 'History', tab_history },
+    { 'Loot', tab_loot }, { 'Members', tab_members }, { 'Linkshells', tab_linkshells }, { 'Audit', tab_history },
     { 'Settings', tab_settings }, { 'Help', tab_help },
 };
 
