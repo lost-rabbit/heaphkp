@@ -10,21 +10,25 @@ Cloudflare Worker + D1 that lets several HeaphKP clients (the `heaphkp` Ashita a
 ## Test locally (nothing goes online)
 
 ```
-npx wrangler@4 d1 execute lsdkp-db --local --file=schema.sql
+npx wrangler@4 d1 execute heaphkp-db --local --file=schema.sql
 npx wrangler@4 dev --local --port 8799
 ```
 
 The client test harness is in the session scratchpad `dkptest\` (`test_server.py`, `test_sync.py`).
 
-## Deploy (only with Heaph's OK)
+## Deploy
+
+Heaph's instance: `https://heaphkp.ialreadyforgotwhoiam.workers.dev` (Worker `heaphkp`, D1 `heaphkp-db`), deployed 2026-10-30. To run your own:
 
 ```
-npx wrangler@4 d1 create lsdkp-db            # paste the id into wrangler.toml
-npx wrangler@4 d1 execute lsdkp-db --remote --file=schema.sql
+npx wrangler@4 d1 create heaphkp-db          # paste the id into wrangler.toml
+npx wrangler@4 d1 execute heaphkp-db --remote --file=schema.sql --yes
 npx wrangler@4 deploy
 ```
 
 Then put the Worker URL in HeaphKP > Settings > Sync server (or change `DEFAULT_SERVER` in heaphkp.lua).
+
+API for bots and other tools: see `../docs/API.md`.
 Node lives at `C:\Program Files\nodejs` and isn't on PATH in the tool shells.
 
 ## Trust model

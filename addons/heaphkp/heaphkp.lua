@@ -55,7 +55,7 @@ local DROPDIR = ROOT .. '\\drops';
 local SSDIR   = INSTALL .. '\\screenshots';
 local TAG     = '\30\81[HeaphKP]\30\01 ';
 local ACCESSFILE = ROOT .. '\\access.json';
-local DEFAULT_SERVER = '';   -- the sync server URL is set in Settings > Sync server (or here at deploy time)
+local DEFAULT_SERVER = 'https://heaphkp.ialreadyforgotwhoiam.workers.dev';   -- Heaph's sync server; change in Settings > Sync server
 local HK = {};               -- helpers and small state added after the main chunk filled up with locals
 
 local ROLES = { 'member', 'officer', 'admin' };
@@ -175,7 +175,7 @@ end
 local function load_access()
     local t = read_json(ACCESSFILE);
     if t then
-        access.server = t.server or access.server;
+        if (type(t.server) == 'string') and (t.server ~= '') then access.server = t.server; end   -- an empty saved value keeps the default
         access.active = t.active or 'local';
         access.books = t.books or {};
     end

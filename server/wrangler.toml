@@ -1,9 +1,9 @@
-name = "lsdkp"
+name = "heaphkp"
 main = "worker.js"
 compatibility_date = "2026-09-01"
 
-# Created at deploy time with: npx wrangler@4 d1 create lsdkp-db  (then paste the id here)
+# Made with: npx wrangler@4 d1 create heaphkp-db  (the id below is Heaph's; make your own for another server)
 [[d1_databases]]
 binding = "DB"
-database_name = "lsdkp-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_name = "heaphkp-db"
+database_id = "93787c5c-2a13-4da5-8ecc-212951c38ccf"
