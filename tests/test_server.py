@@ -2,7 +2,7 @@ import json, urllib.request, time, sys
 BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:8799'
 
 def post(path, body):
-    req = urllib.request.Request(BASE + path, json.dumps(body).encode(), {'content-type': 'application/json'})
+    req = urllib.request.Request(BASE + path, json.dumps(body).encode(), {'content-type': 'application/json', 'User-Agent': 'heaphkp-tests/1.0'})
     try:
         with urllib.request.urlopen(req) as r: return r.status, json.loads(r.read())
     except urllib.error.HTTPError as e: return e.code, json.loads(e.read())

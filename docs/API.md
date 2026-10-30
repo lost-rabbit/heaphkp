@@ -42,6 +42,11 @@ signed as that bot, never as a player, and it can be revoked like any member.
 
 Send the key as `Authorization: Bearer hkp_…` (or `"key"` in the JSON body). 120 calls per minute per key.
 
+Also send a `User-Agent` of your own (for example `mybot/1.0`): Cloudflare's bot check in front of the server answers
+**403** to the default Python `urllib` agent before the request reaches HeaphKP.
+
+Heaph's server: `https://heaphkp.ialreadyforgotwhoiam.workers.dev`.
+
 ### GET /v1/book
 
 Everything a player sees, computed from the shared log:
@@ -81,7 +86,7 @@ Errors come back as `{ "error": "…" }` with 400 (bad input), 401 (bad key), 40
 import requests
 KEY = 'hkp_...'
 BASE = 'https://<your-worker>.workers.dev'
-H = {'Authorization': 'Bearer ' + KEY}
+H = {'Authorization': 'Bearer ' + KEY, 'User-Agent': 'mybot/1.0'}
 
 book = requests.get(BASE + '/v1/book', headers=H).json()
 for t in book['timers']:

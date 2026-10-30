@@ -10,7 +10,7 @@ for _ in range(120):
 
 def call(method, path, body=None, key=None):
     data = json.dumps(body).encode() if body is not None else None
-    hdr = {'content-type': 'application/json'}
+    hdr = {'content-type': 'application/json', 'User-Agent': 'heaphkp-tests/1.0'}
     if key: hdr['Authorization'] = 'Bearer ' + key
     req = urllib.request.Request(BASE + path, data, hdr, method=method)
     try:
