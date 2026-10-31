@@ -26,46 +26,29 @@ default. The Help tab lists every command and mob alias.
 The window: tabs for DKP, Auction, ToDs, Attendance, Loot, Members, Linkshells, Audit, Settings and Help. The ToDs
 tab shows every tracked mob's last time of death and when its window opens or closes, in your own clock.
 
-![HeaphKP window, ToDs tab](docs/screenshots/tods-tab.webp)
+![HeaphKP window, ToDs tab](docs/screenshots/tods.png)
 
 | Tab | What it is for |
 |---|---|
-| [DKP](docs/screenshots/dkp-tab.webp) | Standings: name, DKP, earned, spent, ticks, role. Add people by name or from your target. |
-| [Auction](docs/screenshots/auction-tab.webp) | Open or sealed bidding with a minimum price and timer; unawarded drops from the last 6 hours; award by hand. |
-| [ToDs](docs/screenshots/tods-tab.webp) | Last time of death and window for every tracked mob. |
-| [Attendance](docs/screenshots/attendance-tab.webp) | Start a camp; ready checks every N minutes; DKP per tick and kill bonus; auto-camps that start before a window. |
-| [Loot](docs/screenshots/loot-tab.webp) | Drop log: when, item, mob, who got it, whether a screenshot was taken. |
-| [Members](docs/screenshots/members-tab.webp) | Roles, roll call of who has the addon, `!join heaphkp` requests to approve. |
-| [Linkshells](docs/screenshots/linkshells-tab.webp) | Your linkshells, which books you can open, turning DKP on as the LS owner, joining with a code. |
-| [Audit](docs/screenshots/audit-tab.webp) | Every change with who made it; undo, CSV export. |
-| [Settings](docs/screenshots/settings-tab.webp) | Window style, moogle, alerts, chat control, bidding, timers, sync server. |
-| [Help](docs/screenshots/help-tab.webp) | Every command and mob alias. |
+| [DKP](docs/screenshots/dkp.png) | Standings: name, DKP, earned, spent, ticks, role. Add people by name or from your target. |
+| [Auction](docs/screenshots/auction.png) | Open or sealed bidding with a minimum price and timer; unawarded drops from the last 6 hours; award by hand. |
+| [ToDs](docs/screenshots/tods.png) | Last time of death and window for every tracked mob. |
+| [Attendance](docs/screenshots/attendance.png) | Start a camp; ready checks every N minutes; DKP per tick and kill bonus; auto-camps that start before a window. |
+| [Loot](docs/screenshots/loot.png) | Drop log: when, item, mob, who got it, whether a screenshot was taken. |
+| [Members](docs/screenshots/members.png) | Roles, roll call of who has the addon, `!join heaphkp` requests to approve. |
+| [Linkshells](docs/screenshots/linkshells.png) | Your linkshells, which books you can open, turning DKP on as the LS owner, joining with a code. |
+| [Audit](docs/screenshots/audit.png) | Every change with who made it; undo, CSV export. |
+| [Settings](docs/screenshots/settings.png) | Window style, moogle, alerts, chat control, bidding, timers, sync server. |
+| [Help](docs/screenshots/help.png) | Every command and mob alias. |
 
 The clock moogle sits on screen and counts down to the next known window; its name is the mob it is counting for, and
 the screen reads OPEN while the window is up.
 
-![Clock moogle counting down to Shikigami Weapon](docs/screenshots/clock-moogle.png)
-![Clock moogle with the Simurgh window open](docs/screenshots/moogle-open.png)
+<img src="docs/screenshots/clock-moogle.png" width="200"> <img src="docs/screenshots/moogle-open.png" width="200">
 
 Thirty minutes before a window a small card appears above the moogle (and a chime plays), dismissed with one click.
 
-![Window alert card above the moogle](docs/screenshots/window-alert.png)
-
-## Screenshots
-
-The clock moogle (counting down to the next known window, here open) and the alert it raises 30 minutes before:
-
-<img src="docs/screenshots/moogle-open.png" width="200"> <img src="docs/screenshots/alert.png" width="520">
-
-| ToDs | Auction | Attendance |
-|---|---|---|
-| ![ToDs](docs/screenshots/tods.png) | ![Auction](docs/screenshots/auction.png) | ![Attendance](docs/screenshots/attendance.png) |
-
-| Loot | Linkshells | Settings |
-|---|---|---|
-| ![Loot](docs/screenshots/loot.png) | ![Linkshells](docs/screenshots/linkshells.png) | ![Settings](docs/screenshots/settings.png) |
-
-More in [docs/screenshots](docs/screenshots) (DKP, Members, Audit, Help).
+<img src="docs/screenshots/alert.png" width="520">
 
 ## Install
 
