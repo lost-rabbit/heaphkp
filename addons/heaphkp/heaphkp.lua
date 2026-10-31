@@ -37,7 +37,7 @@
 
 addon.name    = 'heaphkp';
 addon.author  = 'Heaph';
-addon.version = '1.5.1';
+addon.version = '1.5.2';
 addon.desc    = 'HeaphKP: linkshell DKP shared between officers, auctions, ready checks, drop screenshots, HNM windows.';
 addon.link    = '';
 
@@ -3158,20 +3158,32 @@ local function draw_pill()
     end
     imgui.End();
     imgui.PopStyleVar(1);
-    -- the alert note sits beside the moogle until you open HeaphKP or dismiss it
+    -- the alert note is a small card above the moogle until you open HeaphKP or dismiss it. Heaph 10-31: it used to sit
+    -- beside the moogle as one long line and ran off the right edge of the screen; now it wraps to a fixed width,
+    -- is centred on the moogle and kept inside the screen (last frame's size places it this frame).
     if (#alerts > 0) and (not ui.open[1]) then
-        imgui.SetNextWindowPos({ wx + icon + ui.px(8), wy }, ImGuiCond_Always);
+        local sw, sh = 1920, 1080;
+        pcall(function () local d = imgui.GetIO().DisplaySize; sw, sh = d.x, d.y; end);
+        local aw, ah = HK.alertW or ui.px(240), HK.alertH or ui.px(64);
+        local ax = math.max(ui.px(4), math.min(sw - aw - ui.px(4), math.floor(wx + icon / 2 - aw / 2 + 0.5)));
+        local ay = wy - ah - ui.px(6);
+        if (ay < ui.px(4)) then ay = wy + icon + ui.px(28); end   -- moogle at the top edge: below it instead
+        imgui.SetNextWindowPos({ ax, ay }, ImGuiCond_Always);
+        imgui.SetNextWindowSizeConstraints({ ui.px(140), 0 }, { ui.px(250), sh });
         if imgui.Begin('##heaphkp_alert', true, bit.bor(ImGuiWindowFlags_NoTitleBar, ImGuiWindowFlags_AlwaysAutoResize,
                 ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoMove, ImGuiWindowFlags_NoSavedSettings)) then
             card();
             push_font();
-            for i = math.max(1, #alerts - 2), #alerts do
-                imgui.TextColored(C.accent, clock(alerts[i].t):match('%d+:%d+ %a+') or '');
-                imgui.SameLine();
-                imgui.TextColored(C.text, alerts[i].text);
-            end
+            local a = alerts[#alerts];
+            imgui.PushTextWrapPos(ui.px(236));
+            imgui.TextColored(C.accent, clock(a.t):match('%d+:%d+ %a+') or '');
+            imgui.SameLine();
+            imgui.TextColored(C.text, a.text);
+            imgui.PopTextWrapPos();
+            if (#alerts > 1) then imgui.TextColored(C.dim, ('+%d earlier'):format(#alerts - 1)); imgui.SameLine(); end
             if imgui.SmallButton('Got it') then alerts = {}; ui_badge = false; end
             imgui.PopFont();
+            HK.alertW, HK.alertH = imgui.GetWindowSize();
         end
         imgui.End();
     end
