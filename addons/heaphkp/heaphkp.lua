@@ -37,7 +37,7 @@
 
 addon.name    = 'heaphkp';
 addon.author  = 'Heaph';
-addon.version = '1.5.3';
+addon.version = '1.5.4';
 addon.desc    = 'HeaphKP: linkshell DKP shared between officers, auctions, ready checks, drop screenshots, HNM windows.';
 addon.link    = '';
 
@@ -2414,7 +2414,7 @@ local function tab_settings()
                 local isz = { db.cfg.iconSize or 70 }; small_input_int('##isize', isz, 60);
                 if (isz[1] ~= db.cfg.iconSize) then db.cfg.iconSize = math.max(40, math.min(200, isz[1])); touch(); end
                 imgui.SameLine(); check('Bob', 'iconBob');
-                label('The clock counts down to the next known window: 21h05, then 05:00, then OPEN. Gold within your alert time.');
+                label('The clock counts down to the next known window: 21h05, then 05:00. Gold within your alert time; once the window is open the digits turn green and count down to its close.');
                 section('Window alerts');
                 check('Alert before known windows', 'notifyOn');
                 imgui.SameLine(); local nl = { db.cfg.notifyLead }; small_input_int('min before##nl', nl, 50);
@@ -3049,10 +3049,10 @@ function ui.next_window()
     return best, bestT, bestOpen, bestAt;
 end
 
--- 21h05 over an hour, 05:00 under it, OPEN in the window, --:-- with no ToD.
+-- 21h05 over an hour, 05:00 under it, --:-- with no ToD. In the window (Heaph 10-31) the same digits count down to the
+-- close instead of a static OPEN, in green.
 function ui.clock_text(secs, isOpen)
-    if isOpen then return 'OPEN'; end
-    if (secs == nil) then return '--:--'; end
+    if (secs == nil) then return isOpen and 'OPEN' or '--:--'; end
     secs = math.max(0, math.floor(secs));
     if (secs >= 3600) then
         local h = math.floor(secs / 3600);
@@ -3131,7 +3131,7 @@ local function draw_pill()
         if hovered then
             if (not clockStyle) then hoverLine = ui.open[1] and 'click to close' or 'click to open';
             elseif (key == nil) then hoverLine = 'no known windows yet';
-            elseif isOpen then hoverLine = ('open since %s %s'):format(clock(openAt), zone());
+            elseif isOpen then hoverLine = ('open since %s, closes %s %s'):format(clock(openAt), clock(os.time() + (secs or 0)), zone());
             else hoverLine = ('opens %s %s'):format(clock(openAt), zone()); end
         end
         if ui_badge or (#alerts > 0) then
@@ -3140,7 +3140,7 @@ local function draw_pill()
             dl:AddCircle({ wx + icon - r, wy + r }, r, imgui.GetColorU32({ 1, 1, 1, 1 }), 20, 1.5);
         end
         local now = os.time();
-        local txt = (clockStyle and key) or nil;
+        local txt = (clockStyle and key) or nil;   -- just the name; green digits say the window is open
         if (db.auction ~= nil) then txt = ('bid %s'):format(dur(db.auction.ends - now));
         elseif (db.rc ~= nil) then txt = ('check %s'):format(dur(db.rc.closes - now));
         elseif (db.event ~= nil) then txt = db.event.name; end
