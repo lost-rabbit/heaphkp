@@ -21,9 +21,20 @@ Everything can be done from the window. Chat control (people answering ready che
 officers running things with `!` commands) is off or on per feature in Settings; officer chat commands are **off** by
 default. The Help tab lists every command and mob alias.
 
+## Screenshots
+
+The clock moogle sits on screen and counts down to the next known window; its name is the mob it is counting for.
+
+![Clock moogle counting down to Shikigami Weapon](docs/screenshots/clock-moogle.png)
+
+Thirty minutes before a window a small card appears above the moogle (and a chime plays), dismissed with one click.
+
+![Window alert card above the moogle](docs/screenshots/window-alert.png)
+
 ## Install
 
-1. Copy `addons/heaphkp` into your Ashita `addons` folder.
+1. Download the zip from the [latest release](https://github.com/lost-rabbit/heaphkp/releases/latest) and unzip
+   `heaphkp` into your Ashita `addons` folder (or copy `addons/heaphkp` from this repository).
 2. In game: `/addon load heaphkp`. The moogle appears; click it (or `/hkp`) to open the window.
 3. Optional: add `/addon load heaphkp` to your Ashita startup script.
 
