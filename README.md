@@ -23,9 +23,16 @@ default. The Help tab lists every command and mob alias.
 
 ## Screenshots
 
-The clock moogle sits on screen and counts down to the next known window; its name is the mob it is counting for.
+The window: tabs for DKP, Auction, ToDs, Attendance, Loot, Members, Linkshells, Audit, Settings and Help. The ToDs
+tab shows every tracked mob's last time of death and when its window opens or closes, in your own clock.
+
+![HeaphKP window, ToDs tab](docs/screenshots/tods-tab.webp)
+
+The clock moogle sits on screen and counts down to the next known window; its name is the mob it is counting for, and
+the screen reads OPEN while the window is up.
 
 ![Clock moogle counting down to Shikigami Weapon](docs/screenshots/clock-moogle.png)
+![Clock moogle with the Simurgh window open](docs/screenshots/moogle-open.png)
 
 Thirty minutes before a window a small card appears above the moogle (and a chime plays), dismissed with one click.
 
