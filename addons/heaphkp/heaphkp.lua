@@ -37,7 +37,7 @@
 
 addon.name    = 'heaphkp';
 addon.author  = 'Heaph';
-addon.version = '1.5.2';
+addon.version = '1.5.3';
 addon.desc    = 'HeaphKP: linkshell DKP shared between officers, auctions, ready checks, drop screenshots, HNM windows.';
 addon.link    = '';
 
@@ -1931,11 +1931,9 @@ local function tab_standings()
                 imgui.TextColored(role == 'member' and C.dim or C.accent, role);
             end
         end
-        if (next(db.members) == nil) then
-            imgui.TableNextRow(); imgui.TableNextColumn();
-            label('Nobody yet. Add names above, or start an event and run a ready check.');
-        end
         imgui.EndTable();
+        -- (outside the table: inside it the line was clipped to the Name column, "Add names above, or")
+        if (next(db.members) == nil) then label('Nobody yet. Add names above, or start an event and run a ready check.'); end
     end
     local k = ui.sel;
     if (k == nil) or (db.members[k] == nil) then ui.sel = nil; return; end
@@ -2426,8 +2424,12 @@ local function tab_settings()
                 if imgui.SmallButton('Test') then notify('Test: King Arthro window opens in 30 min.'); end
                 section('Time');
                 label(('Times show in your zone (%s). LS posts say the zone and a countdown, so every member reads them right.'):format(zone()));
-                label(((access.clockOffset or 0) ~= 0) and ('Your PC clock is %+ds off the server; HeaphKP corrects it.'):format(-(access.clockOffset or 0))
-                    or 'Your PC clock matches the sync server.');
+                if not synced() then
+                    label('Your PC clock is checked against the sync server once a shared book is open.');
+                else
+                    label(((access.clockOffset or 0) ~= 0) and ('Your PC clock is %+ds off the server; HeaphKP corrects it.'):format(-(access.clockOffset or 0))
+                        or 'Your PC clock matches the sync server.');
+                end
             end
             imgui.EndChild();
             imgui.EndTabItem();
@@ -2809,11 +2811,21 @@ local function tab_help()
     local keys = {};
     for k in pairs(HK.ALIAS) do keys[#keys + 1] = k; end
     table.sort(keys);
+    -- column width from the longest entry, so "Overlord Bakgodek" and "Shikigami Weapon" no longer run into the next column
+    local colW = 0;
+    for _, k in ipairs(keys) do
+        local w = imgui.CalcTextSize(k .. '  ' .. HK.ALIAS[k]);
+        if (type(w) == 'number') and (w > colW) then colW = w; end
+    end
+    colW = math.max(colW + ui.px(18), ui.px(150));
+    local avail = imgui.GetContentRegionAvail();
+    if (type(avail) ~= 'number') then avail = ui.px(600); end
+    local cols = math.max(1, math.floor(avail / colW));
     local col = 0;
     for _, k in ipairs(keys) do
-        if (col > 0) then imgui.SameLine(ui.px(col * 150)); end
+        if (col > 0) then imgui.SameLine(col * colW); end
         imgui.TextColored(C.accent, k); imgui.SameLine(); imgui.TextColored(C.text, HK.ALIAS[k]);
-        col = (col + 1) % 4;
+        col = (col + 1) % cols;
     end
 end
 

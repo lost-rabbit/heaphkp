@@ -7,6 +7,8 @@ Addon name: **heaphkp** (Ashita v4, Lua). Author: Heaph. Source: this repository
 A linkshell DKP tool: standings, attendance ready checks, loot auctions, a loot log with screenshots, and HNM window
 timers, all in one ImGui window. Optionally several members share one book through a small web service.
 
+In-game screenshots of every tab, the moogle and the alert: [docs/screenshots](docs/screenshots) (also shown in the README).
+
 ## What it reads
 
 | Source | Why |
