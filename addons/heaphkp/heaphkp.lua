@@ -21,7 +21,7 @@
 *   - Every 30 min (Settings) while an event is running: ready check. Alliance members in your zone are counted
 *     automatically, anyone else answers "here" within the window. Everyone present gets the tick DKP.
 *   - Treasure pool drops from tracked HNMs/NMs (or priced items, or anything during an event): screenshot, copied to
-*     config\addons\heaphkp\drops\, and logged with who lotted it.
+*     config\addons\heaphkp\drops\, and logged with who lotted it. Only officers and leaders take the screenshot.
 *   - "X defeats <HNM>" sets that HNM's time of death and shows its window. A kill during an event pays the kill bonus.
 *
 * Data: config\addons\heaphkp\db.json (This PC only book), book_<ls>.json per shared LS, access.json (sync tokens,
@@ -37,7 +37,7 @@
 
 addon.name    = 'heaphkp';
 addon.author  = 'Heaph';
-addon.version = '1.5.4';
+addon.version = '1.5.6';
 addon.desc    = 'HeaphKP: linkshell DKP shared between officers, auctions, ready checks, drop screenshots, HNM windows.';
 addon.link    = '';
 
@@ -175,6 +175,10 @@ end
 
 local function load_access()
     local t = read_json(ACCESSFILE);
+    if (t == nil) and read_json(ACCESSFILE .. '.bak') then
+        os.rename(ACCESSFILE .. '.bak', ACCESSFILE);
+        t = read_json(ACCESSFILE);
+    end
     if t then
         if (type(t.server) == 'string') and (t.server ~= '') then access.server = t.server; end   -- an empty saved value keeps the default
         access.active = t.active or 'local';
@@ -188,6 +192,11 @@ local function save_access() write_json(ACCESSFILE, access); end
 local function load_db()
     local path = book_file(bookKey);
     local t = read_json(path);
+    if (t == nil) and read_json(path .. '.bak') then   -- the save was interrupted between its two renames
+        os.rename(path .. '.bak', path);
+        t = read_json(path);
+        print(TAG .. 'restored ' .. path .. ' from its backup.');
+    end
     db = defaults();
     if t then merge(db, t);
     elseif (t == false) then
@@ -283,10 +292,26 @@ local function item_name(id)
     return ('item %d'):format(id);
 end
 
+local U = {};   -- helpers added 11-01 live here: the main chunk is at Lua's 200-local limit
 local function clean(s)
     s = tostring(s or '');
     s = s:gsub('\30.', ''):gsub('\31.', ''):gsub('\127\49', ''):gsub('[\r\n]', '');
     return s;
+end
+-- Numbers and strings from the sync feed or from chat are checked before they touch the book or a chat line
+-- (11-01 security review: one bad value from another client used to break every frame on every PC in the LS).
+function U.fnum(v, lo, hi)
+    v = tonumber(v);
+    if (v == nil) or (v ~= v) or (v == math.huge) or (v == -math.huge) then return nil; end
+    if (lo ~= nil) and (v < lo) then return nil; end
+    if (hi ~= nil) and (v > hi) then return nil; end
+    return v;
+end
+function U.sstr(v, n)
+    if (type(v) ~= 'string') and (type(v) ~= 'number') then return nil; end
+    v = clean(tostring(v)):gsub('<%a+>', '');   -- no <t>/<st>/<hpp> expansions in anything we post
+    if (v == '') then return nil; end
+    return v:sub(1, n or 64);
 end
 
 local function dur(s)
@@ -296,12 +321,14 @@ local function dur(s)
     return ('%d:%02d'):format(m, x);
 end
 
-local function clock(t) return (os.date('%a %I:%M %p', t):gsub(' 0', ' ')); end
+local function clock(t) local ok, s = pcall(os.date, '%a %I:%M %p', t); if (not ok) or (s == nil) then return '?'; end return (s:gsub(' 0', ' ')); end
 
 -- This PC's time zone as players say it (PT, MT, CT, ET...), else UTC+/-N. Windows gives "Pacific Daylight Time".
 local zoneCache = nil;
 local function zone()
-    if (zoneCache ~= nil) then return zoneCache; end
+    local dst = os.date('*t').isdst and 1 or 0;
+    if (zoneCache ~= nil) and (U.zoneDst == dst) then return zoneCache; end
+    U.zoneDst = dst;
     local name = tostring(os.date('%Z') or '');
     for k, v in pairs({ Pacific = 'PT', Mountain = 'MT', Central = 'CT', Eastern = 'ET', Alaska = 'AKT', Hawaii = 'HT',
                         Atlantic = 'AT', Newfoundland = 'NT', ['GMT Standard'] = 'UK', ['W. Europe'] = 'CET', ['Central Europe'] = 'CET',
@@ -323,7 +350,43 @@ local function pclock(t)
     local d = (h > 0) and ('%dh%02d'):format(h, m) or ('%dm'):format(m);
     return (('%s %s (%s %s)'):format(clock(t), zone(), (rel >= 0) and 'in' or '', (rel >= 0) and d or (d .. ' ago')):gsub('%(%s+', '('));
 end
-local function stamp(t) return (os.date('%m/%d %I:%M %p', t):gsub(' 0', ' ')); end
+local function stamp(t) local ok, s = pcall(os.date, '%m/%d %I:%M %p', t); if (not ok) or (s == nil) then return '?'; end return (s:gsub(' 0', ' ')); end
+-- This PC's UTC offset in hours (DST included), and the offset a typed zone tag means. US zones follow this PC's
+-- DST flag (close enough: the whole shell is in North America).
+function U.local_offset()
+    local now = os.rawtime();
+    local u = os.date('!*t', now);
+    u.isdst = os.date('*t', now).isdst;
+    return (now - os.rawtime(u)) / 3600;
+end
+U.ZONE_TAGS = { pt = -8, pst = -8, pdt = -7, mt = -7, mst = -7, mdt = -6, ct = -6, cst = -6, cdt = -5, et = -5, est = -5, edt = -4,
+                    akt = -9, ht = -10, at = -4, utc = 0, gmt = 0, uk = 0, bst = 1, cet = 1, cest = 2, jst = 9, aet = 10 };
+-- Plain PT/MT/CT/ET/AKT/AT follow this PC's daylight flag (the zones switch within a few hours of each other, so a
+-- tag is off by an hour only in that gap on the two change nights). HT never shifts; PST/PDT/EST/... say what they mean.
+U.FLOATING_TAGS = { pt = true, mt = true, ct = true, et = true, akt = true, at = true };
+function U.tag_offset(tag)
+    tag = tostring(tag or ''):lower();
+    local base = U.ZONE_TAGS[tag];
+    if (base == nil) then
+        local sign, h = tag:match('^utc([%+%-])(%d+%.?%d*)$');
+        if sign then
+            h = tonumber(h);
+            if (h == nil) or (h > 14) then return nil; end
+            return h * ((sign == '-') and -1 or 1);
+        end
+        return nil;
+    end
+    if U.FLOATING_TAGS[tag] and os.date('*t').isdst then base = base + 1; end
+    return base;
+end
+-- a history line: ToD entries carry the time as a number (e.at) and get this PC's zone on display, so every member
+-- reads their own clock. Older entries had the sender's local time baked into the text.
+function U.hist_line(e)
+    if (e == nil) then return ''; end
+    local txt = tostring(e.text or e.kind or '');
+    if (type(e.at) == 'number') then return ('%s %s %s'):format(txt, stamp(e.at), zone()); end
+    return txt;
+end
 
 local function sorted_members()
     local out = {};
@@ -343,6 +406,7 @@ local outq, lastSend, lastTell = {}, 0, {};
 local ls_guard;   -- set in the Linkshells section: may this post go out, and where (shared books)
 
 local function post(msg)
+    msg = tostring(msg or ''):gsub('<%a+>', '');
     if (not db.cfg.announce) then print(TAG .. msg); return; end
     local ch, why = db.cfg.channel, nil;
     if (ls_guard ~= nil) then ch, why = ls_guard(); end
@@ -351,6 +415,7 @@ local function post(msg)
 end
 
 local function tell(name, msg, force)
+    msg = tostring(msg or ''):gsub('<%a+>', '');
     if (N(name) == me()) then print(TAG .. msg); return; end
     if (not db.cfg.replyTells) and (not force) then return; end
     -- never an auto-responder to strangers: only names in the roster or with access get a reply
@@ -425,7 +490,7 @@ local function undo_last(by)
         if (not e.undone) and (e.deltas ~= nil) and (#e.deltas > 0) then
             apply_undo(e);
             emit('undo', { id = e.id });
-            record({ kind = 'undo', by = by, text = 'undid: ' .. (e.text or e.kind) });
+            record({ kind = 'undo', by = by, text = 'undid: ' .. U.hist_line(e) });
             return e;
         end
     end
@@ -724,22 +789,35 @@ local function resolve_mob(text)
     return nil;
 end
 
--- "now", "21:43", "9:43pm", "-15m", "-2h" -> epoch seconds
+-- "now", "21:43", "9:43pm", "-15m", "-2h" -> epoch seconds. A clock time is this PC's zone unless it ends in a
+-- zone tag: "21:43 et", "9:43pm ct", "18:02 utc-5" (so a ToD read off Discord in someone else's zone lands right).
 local function parse_when(s)
-    s = tostring(s or 'now'):lower();
+    s = tostring(s or 'now'):lower():gsub('^%s+', ''):gsub('%s+$', '');
     if (s == '' or s == 'now') then return os.time(); end
     local n, u = s:match('^%-(%d+)([mh]?)$');
-    if n then return os.time() - tonumber(n) * ((u == 'h') and 3600 or 60); end
+    if n then
+        local back = U.fnum(n, 0, (u == 'h') and 72 or 4320);   -- at most three days back
+        return back and (os.time() - back * ((u == 'h') and 3600 or 60)) or nil;
+    end
+    local shift = 0;
+    local body, tag = s:match('^(.-)%s+([%a%+%-%.%d]+)$');
+    if body and (U.tag_offset(tag) ~= nil) then
+        shift = (U.local_offset() - U.tag_offset(tag)) * 3600;   -- their clock reads earlier/later than ours by this much
+        s = body;
+    end
     local h, mi, ap = s:match('^(%d%d?):(%d%d)%s*([ap]?)m?$');
     if h then
         h, mi = tonumber(h), tonumber(mi);
         if (ap == 'p') and (h < 12) then h = h + 12; end
         if (ap == 'a') and (h == 12) then h = 0; end
         local d = os.date('*t');
-        d.hour, d.min, d.sec = h, mi, 0;
-        local t = os.time(d);
-        if (t > os.time() + 60) then t = t - 86400; end
-        return t;
+        d.hour, d.min, d.sec, d.isdst = h, mi, 0, nil;   -- nil isdst: the C library decides for that clock time
+        local now = os.time();
+        local t = os.time(d) + shift;
+        if (t > now + 60) then d.day, d.isdst = d.day - 1, nil; t = os.time(d) + shift; end          -- a calendar day back, not 86400 s
+        if (t + 86400 <= now + 60) then d.day, d.isdst = d.day + 1, nil; t = os.time(d) + shift; end  -- a zone east of here already past its midnight
+        if (U.fnum(t, now - 3 * 86400, now + 3 * 86400) == nil) then return nil; end   -- a typed time is within three days
+        return math.floor(t + 0.5);
     end
     return nil;
 end
@@ -747,7 +825,7 @@ end
 local function window_text(e, tod, now)
     if (e == nil) or (e.minS == nil) then return 'no timer', 'dim'; end
     local open, close = tod + e.minS, tod + (e.maxS or e.minS);
-    if (now < open) then return ('opens %s (in %s)'):format(clock(open), dur(open - now)), 'wait'; end
+    if (now < open) then return ('opens %s %s (in %s)'):format(clock(open), zone(), dur(open - now)), 'wait'; end
     if (now <= close) then
         if (e.windowS ~= nil) and (e.windowS > 0) then
             local total = math.floor((close - open) / e.windowS) + 1;
@@ -770,7 +848,7 @@ local function set_tod(key, t, by, form, silent)
     if (form ~= nil) then streak = hq and 0 or (streak + 1); end
     db.tods[key] = { t = t, by = by, form = form or (prev and prev.form) or key, streak = streak };
     emit('tod', { key = key, v = db.tods[key] });
-    local entry = { kind = 'tod', by = by, mob = key, text = ('%s ToD %s'):format(form or key, stamp(t)), id = new_id(), t = os.time() };
+    local entry = { kind = 'tod', by = by, mob = key, text = ('%s ToD'):format(form or key), at = t, id = new_id(), t = os.time() };
     apply_rec(entry);
     if (db.cfg.shareTod ~= false) then emit('rec', entry); end
     -- only officers put ToDs in the LS. In a shared book that is your server role (officer / admin /
@@ -779,7 +857,7 @@ local function set_tod(key, t, by, form, silent)
     local officer = (not synced()) or (myRole == 'officer') or (myRole == 'admin') or (myRole == 'owner');
     -- ...and only while an event is running.
     if officer and (db.event ~= nil) and db.cfg.todPost and (not silent) and (e ~= nil) and (e.minS ~= nil) then
-        local auto =(db.autoCamp[key] ~= nil) and (' Camp auto-starts %s.'):format(clock(t + e.minS - db.cfg.autoLead * 60)) or '';
+        local auto =(db.autoCamp[key] ~= nil) and (' Camp auto-starts %s %s.'):format(clock(t + e.minS - db.cfg.autoLead * 60), zone()) or '';
         post(('%s ToD %s %s. Window opens %s.%s'):format(form or key, clock(t), zone(), pclock(t + e.minS), auto));
     end
 end
@@ -842,7 +920,7 @@ local function set_auto(key, on, by)
     touch();
     local at = on and auto_start_time(key);
     if (not on) then return ('%s auto camp off.'):format(key); end
-    if at then return ('%s camp starts by itself %s.'):format(key, clock(at)); end
+    if at then return ('%s camp starts by itself %s %s.'):format(key, clock(at), zone()); end
     return ('%s camp will start by itself once it has a ToD.'):format(key);
 end
 
@@ -874,6 +952,7 @@ end
 local function want_shot(mobName, itemName)
     local mode = db.cfg.shotMode;
     if (mode == 'off') then return false; end
+    if (LEVEL[role_of(me() or '')] < LEVEL.officer) then return false; end   -- only officers and leaders file drop shots
     if (mode == 'all') then return true; end
     return (db.event ~= nil) or (mobIndex[(mobName or ''):lower()] ~= nil) or (db.prices[item_key(itemName)] ~= nil);
 end
@@ -969,6 +1048,11 @@ local function split_tod(rest)
     local words = {};
     for w in rest:gmatch('%S+') do words[#words + 1] = w; end
     local when = nil;
+    -- "Kreutzet 21:43 et": a clock time followed by a zone tag is one time
+    if (#words > 2) and words[#words - 1]:match('%d') and (U.tag_offset(words[#words]) ~= nil) then
+        local two = words[#words - 1] .. ' ' .. words[#words];
+        if (parse_when(two) ~= nil) then table.remove(words); table.remove(words); return table.concat(words, ' '), two; end
+    end
     if (#words > 1) and (parse_when(words[#words]) ~= nil) and (words[#words]:match('%d') or words[#words]:lower() == 'now') then
         when = table.remove(words);
     end
@@ -976,7 +1060,7 @@ local function split_tod(rest)
 end
 
 local KNOWN = { camp = 1, event = 1, help = 1, commands = 1, backfill = 1, invite = 1, rollcall = 1, start = 1, stop = 1, rc = 1, auction = 1, bid = 1, close = 1, cancel = 1, award = 1, add = 1, adjust = 1,
-                undo = 1, tod = 1, role = 1, price = 1, track = 1, export = 1 };
+                undo = 1, tod = 1, role = 1, price = 1, track = 1, export = 1, setup = 1 };
 
 HK.approve_join = function (name, role)
     HK.joinReq = HK.joinReq or {};
@@ -1007,7 +1091,7 @@ HK.help_lines = function (chat)
         };
     end
     return {
-        '/hkp (window) | start <event> | stop | rc | event start <mob> | event stop | event auto <mob>',
+        '/hkp (window) | setup (LS leaders: turn DKP on for your linkshell) | start <event> | stop | rc | event start <mob> | event stop | event auto <mob>',
         'auction <item> [min] | close | cancel | award <name> <price> <item> | add <name> <+/-n> [why]',
         'tod <mob> [now|21:43|-15m] | role <name> <role> | price <item> <min> | track <mob> <minH> <maxH>',
         'invite <name|t> [viewer|officer|admin] (t = your target) | rollcall [t] (who has HeaphKP) | undo | export | backfill | help',
@@ -1084,7 +1168,7 @@ HK.write_state = function ()
     end
     st.drops, st.history = {}, {};
     for i = math.max(1, #db.drops - 19), #db.drops do local d = db.drops[i]; st.drops[#st.drops + 1] = { t = d.t, item = d.item, mob = d.mob, awarded = d.awarded, price = d.price, lotted = d.lotted }; end
-    for i = math.max(1, #db.history - 19), #db.history do local h = db.history[i]; st.history[#st.history + 1] = { t = h.t, kind = h.kind, by = h.by, text = h.text, undone = h.undone }; end
+    for i = math.max(1, #db.history - 19), #db.history do local h = db.history[i]; st.history[#st.history + 1] = { t = h.t, kind = h.kind, by = h.by, text = U.hist_line(h), at = h.at, undone = h.undone }; end
     local okE, raw = pcall(json.encode, st);
     if (not okE) then return; end
     local path = ROOT .. '\\state.json';
@@ -1110,6 +1194,12 @@ local function run(cmd, rest, who)
         for _, line in ipairs(HK.help_lines(who ~= nil)) do
             if (who == nil) then print(TAG .. line); else outq[#outq + 1] = ('/t %s [DKP] %s'):format(who, line:sub(1, 110)); end
         end
+        return;
+    end
+    if (cmd == 'setup') then   -- LS leaders: the whole set-up path on one card (Heaph 11-01)
+        if (who ~= nil) then return; end
+        if HK.open_setup then HK.open_setup(); end
+        print(TAG .. 'Set up a linkshell: the steps are at the top of the Linkshells tab.');
         return;
     end
     if (cmd == 'backfill') then
@@ -1181,6 +1271,7 @@ local function run(cmd, rest, who)
         if not gate('auction') then return; end
         local item, min = rest:match('^(.-)%s+(%d+)$');
         if (item == nil) then item = rest; end
+        if (min ~= nil) then min = U.fnum(min, 0, 1000000); if (min == nil) then reply(who, 'That minimum is not a real number.'); return; end end
         local ok, err = start_auction(item, min, by); if not ok then reply(who, err); end
     elseif (cmd == 'close') or (cmd == 'cancel') then
         if not gate('auction') then return; end
@@ -1189,31 +1280,38 @@ local function run(cmd, rest, who)
         if not gate('award') then return; end
         local name, price, item = rest:match('^(%S+)%s+(%d+)%s+(.+)$');
         if (name == nil) then reply(who, 'award <name> <price> <item>'); return; end
+        price = U.fnum(price, 0, 1000000);
+        if (price == nil) then reply(who, 'That price is not a real number.'); return; end
         award(name, price, item, by);
         post(('%s goes to %s for %s DKP.'):format(item, N(name), price));
     elseif (cmd == 'add') or (cmd == 'adjust') then
         if not gate('adjust') then return; end
         local name, amt, why = rest:match('^(%S+)%s+([%+%-]?%d+)%s*(.*)$');
         if (name == nil) then reply(who, 'adjust <name> <+/-n> [reason]'); return; end
-        adjust(name, tonumber(amt), why, by);
+        amt = U.fnum(amt, -1000000, 1000000);
+        if (amt == nil) then reply(who, 'That amount is not a real number.'); return; end
+        adjust(name, amt, why, by);
         reply(who, ('%s now has %d DKP.'):format(N(name), db.members[N(name)].dkp));
     elseif (cmd == 'undo') then
         if not gate('undo') then return; end
         local e = undo_last(by);
-        reply(who, e and ('Undid: ' .. (e.text or e.kind)) or 'Nothing to undo.');
+        reply(who, e and ('Undid: ' .. U.hist_line(e)) or 'Nothing to undo.');
     elseif (cmd == 'tod') then
         if not gate('tod') then return; end
         local mob, when = split_tod(rest);
         local key = resolve_mob(mob);
         if (key == nil) then reply(who, ('No tracked mob called "%s". /dkp track adds one.'):format(mob)); return; end
         local t = parse_when(when);
-        if (t == nil) then reply(who, 'Time: now, 21:43, 9:43pm or -15m.'); return; end
+        if (t == nil) then reply(who, 'Time: now, 21:43, 9:43pm, -15m, or a clock time with a zone: 21:43 et, 9:43pm ct.'); return; end
         local form = key;   -- the typed name when it is an exact mob (e.g. the HQ "Nidhogg"), else the timer's name
         for _, e in ipairs(HNM) do if (type(e) == 'table') and (e.name ~= nil) and (e.name:lower() == mob:lower()) then form = e.name; end end
         set_tod(key, t, by, form, false);
-        reply(who, ('%s ToD set to %s.'):format(form, stamp(t)));
+        reply(who, ('%s ToD set to %s %s.'):format(form, stamp(t), zone()));
     elseif (cmd == 'role') then
         if not gate('adjust') then return; end
+        -- a shared book's roles are the server's: only the token holder sets them, in the window, never by someone
+        -- typing in chat through this client (11-01 security review)
+        if synced() and (who ~= nil) then reply(who, 'Roles for a shared book are set in the window by the book owner.'); return; end
         local name, r = rest:match('^(%S+)%s+(%a+)$');
         if (name == nil) or ((LEVEL[r] == nil) and r ~= 'none') then reply(who, 'role <name> <admin|officer|member|none>'); return; end
         set_role(name, r);
@@ -1222,13 +1320,17 @@ local function run(cmd, rest, who)
         if not gate('adjust') then return; end
         local item, min = rest:match('^(.-)%s+(%d+)$');
         if (item == nil) then reply(who, 'price <item> <min>'); return; end
-        set_price(item_key(item), item, tonumber(min));
+        min = U.fnum(min, 0, 1000000);
+        if (min == nil) then reply(who, 'That minimum is not a real number.'); return; end
+        set_price(item_key(item), item, min);
         reply(who, ('%s minimum: %s DKP.'):format(item, min));
     elseif (cmd == 'track') then
         if not gate('adjust') then return; end
         local name, lo, hi = rest:match('^(.-)%s+([%d%.]+)%s+([%d%.]+)$');
         if (name == nil) then reply(who, 'track <mob> <min hours> <max hours>'); return; end
-        set_custom(name, math.floor(tonumber(lo) * 3600), math.floor(tonumber(hi) * 3600));
+        lo, hi = U.fnum(lo, 0.05, 720), U.fnum(hi, 0.05, 720);
+        if (lo == nil) or (hi == nil) or (hi < lo) then reply(who, 'Hours must be between 0.05 and 720, min before max.'); return; end
+        set_custom(name, math.floor(lo * 3600), math.floor(hi * 3600));
         reply(who, ('Tracking %s (%s-%sh).'):format(name, lo, hi));
     elseif (cmd == 'export') then
         if not gate('adjust') then return; end
@@ -1245,8 +1347,13 @@ local function run(cmd, rest, who)
         if h then
             h:write('id,time,kind,by,text,undone,screenshot\n');
             for _, e in ipairs(db.history) do
-                h:write(('%s,%s,%s,%s,"%s",%s,%s\n'):format(tostring(e.id), os.date('%Y-%m-%d %H:%M:%S', e.t), e.kind, e.by or '',
-                    tostring(e.text or ''):gsub('"', '""'), e.undone and 'yes' or '', e.shot or ''));
+                local function cell(v)
+                    v = tostring(v or ''):gsub('"', '""');
+                    if v:match('^[=+%-@]') then v = "'" .. v; end   -- never a spreadsheet formula
+                    return '"' .. v .. '"';
+                end
+                h:write(('%s,%s,%s,%s,%s,%s,%s\n'):format(cell(e.id), cell(os.date('%Y-%m-%d %H:%M:%S', e.t) or '?'), cell(e.kind), cell(e.by),
+                    cell(U.hist_line(e)), cell(e.undone and 'yes' or ''), cell(e.shot)));
             end
             h:close();
         end
@@ -1264,6 +1371,24 @@ local CHAT_TELL, CHAT_PARTY, CHAT_LS, CHAT_LS2 = 3, 4, 5, 27;
 
 local pendingInvites = {};
 local ui_badge = false;
+
+-- Several officers may have chat commands on, and each of their clients hears the same "!adjust Bob +5". Only one
+-- executes it (11-01 review): in a shared book the book owner when they are in your alliance and zone, otherwise the
+-- first officer or admin name (A-Z) there. Everyone computes the same answer from the same alliance list.
+HK.chat_executor = function ()
+    local here = alliance_here();
+    local my = me() or '';
+    here[my] = true;
+    local best = nil;
+    for n in pairs(here) do
+        local r = db.perms[n];
+        if (r == 'owner') then return n == my; end
+        if (r == 'officer') or (r == 'admin') then
+            if (best == nil) or (n < best) then best = n; end
+        end
+    end
+    return (best == nil) or (best == my);
+end
 
 local function on_chat(kind, from, msg)
     from = N(from);
@@ -1347,6 +1472,7 @@ local function on_chat(kind, from, msg)
     if (cmd ~= nil) and (cmd:lower() ~= 'dkp') then
         cmd = cmd:lower();
         if (cmd == 'bid') or (KNOWN[cmd] == nil) then return; end   -- a bid with no auction open, or plain chat
+        if synced() and (not HK.chat_executor()) then return; end  -- another officer's client runs this one
         run(cmd, rest, from);
     end
 end
@@ -1473,23 +1599,56 @@ local function apply_op(op)
         if (b.seenBy ~= nil) then b.seenBy = op.author; end
         if (type(b.v) == 'table') and (b.v.by ~= nil) then b.v.by = op.author; end
     end
-    if (k == 'rec') then apply_rec(b);
+    if (type(b) ~= 'table') then return; end
+    local when = U.fnum(op.t, 0, 4102444800) or os.time();
+    local DAY3 = 3 * 86400;
+    if (k == 'rec') then
+        if (type(b.id) ~= 'string') or (#b.id > 64) then return; end
+        b.kind = U.sstr(b.kind, 16) or 'note';
+        b.text = U.sstr(b.text, 200) or b.kind;
+        b.t = U.fnum(b.t, when - DAY3, when + DAY3) or when;
+        b.at = U.fnum(b.at, when - DAY3, when + DAY3);
+        b.by, b.mob, b.item, b.drop = U.sstr(b.by, 24), U.sstr(b.mob, 64), U.sstr(b.item, 64), U.sstr(b.drop, 64);
+        local deltas = {};
+        for _, d in ipairs((type(b.deltas) == 'table') and b.deltas or {}) do
+            if (type(d) == 'table') then
+                local n, dd = U.sstr(d.n, 24), U.fnum(d.d, -1000000, 1000000);
+                if n and dd then deltas[#deltas + 1] = { n = n, d = dd }; end
+            end
+        end
+        b.deltas = deltas;
+        local names = {};
+        for _, n in ipairs((type(b.names) == 'table') and b.names or {}) do local v = U.sstr(n, 24); if v then names[#names + 1] = v; end end
+        b.names = names;
+        b.undone = (b.undone == true) or nil;
+        apply_rec(b);
     elseif (k == 'undo') then
+        if (type(b.id) ~= 'string') then return; end
         for _, e in ipairs(db.history) do if (e.id == b.id) then apply_undo(e); end end
-    elseif (k == 'member') then member(b.n);
-    elseif (k == 'member_rm') then db.members[b.n] = nil;
-    elseif (k == 'role') then db.perms[N(b.n)] = (b.r ~= 'none') and b.r or nil;
-    elseif (k == 'price') then db.prices[b.k] = { name = b.name, min = b.min };
-    elseif (k == 'price_rm') then db.prices[b.k] = nil;
-    elseif (k == 'custom') then db.custom[b.name] = { minS = b.minS, maxS = b.maxS }; build_mobs();
-    elseif (k == 'custom_rm') then db.custom[b.name] = nil; build_mobs();
-    elseif (k == 'auto') then db.autoCamp[b.key] = b.on and { by = b.by } or nil;
+    elseif (k == 'member') then if U.sstr(b.n, 24) then member(U.sstr(b.n, 24)); end
+    elseif (k == 'member_rm') then if (type(b.n) == 'string') then db.members[b.n] = nil; end
+    elseif (k == 'role') then
+        if (type(b.n) == 'string') and (type(b.r) == 'string') and (b.r ~= 'owner') and ((LEVEL[b.r] ~= nil) or (b.r == 'none')) then db.perms[N(b.n)] = (b.r ~= 'none') and b.r or nil; end
+    elseif (k == 'price') then
+        local name, min = U.sstr(b.name, 64), U.fnum(b.min, 0, 1000000);
+        if (type(b.k) == 'string') and (#b.k <= 64) and name and min then db.prices[b.k] = { name = name, min = min }; end
+    elseif (k == 'price_rm') then if (type(b.k) == 'string') then db.prices[b.k] = nil; end
+    elseif (k == 'custom') then
+        local name, lo, hi = U.sstr(b.name, 32), U.fnum(b.minS, 60, 30 * 86400), U.fnum(b.maxS, 60, 30 * 86400);
+        if name and lo and hi and (hi >= lo) then db.custom[name] = { minS = lo, maxS = hi }; build_mobs(); end
+    elseif (k == 'custom_rm') then if (type(b.name) == 'string') then db.custom[b.name] = nil; build_mobs(); end
+    elseif (k == 'auto') then if (type(b.key) == 'string') and (#b.key <= 64) then db.autoCamp[b.key] = b.on and { by = U.sstr(b.by, 24) or '?' } or nil; end
     elseif (k == 'tod') then
-        if (type(b.key) ~= 'string') or (type(b.v) ~= 'table') or (type(b.v.t) ~= 'number') then return; end
-        if (math.abs(b.v.t - (op.t or os.time())) > 3 * 86400) then return; end   -- a ToD days away from when it was sent
-        db.tods[b.key] = { t = b.v.t, by = tostring(b.v.by or op.author or '?'), form = tostring(b.v.form or b.key), streak = tonumber(b.v.streak) or 0 };
-    elseif (k == 'tod_clear') then db.tods[b.key] = nil;
+        if (type(b.key) ~= 'string') or (#b.key > 64) or (type(b.v) ~= 'table') then return; end
+        local t = U.fnum(b.v.t, when - DAY3, when + DAY3);
+        if (t == nil) then return; end   -- not a time, or a ToD days away from when it was sent
+        db.tods[b.key] = { t = t, by = U.sstr(b.v.by or op.author, 24) or '?', form = U.sstr(b.v.form, 64) or b.key, streak = U.fnum(b.v.streak, 0, 1000) or 0 };
+    elseif (k == 'tod_clear') then if (type(b.key) == 'string') then db.tods[b.key] = nil; end
     elseif (k == 'drop') then
+        if (type(b.id) ~= 'string') or (#b.id > 64) then return; end
+        b.t = U.fnum(b.t, 0, 4102444800) or when;
+        b.item, b.mob, b.lotted = U.sstr(b.item, 64) or '?', U.sstr(b.mob, 64) or '', U.sstr(b.lotted, 24);
+        b.awarded, b.price, b.slot, b.itemId = U.sstr(b.awarded, 24), U.fnum(b.price, 0, 1000000), U.fnum(b.slot, 0, 100), U.fnum(b.itemId, 0, 100000);
         for _, d in ipairs(db.drops) do
             if (d.id == b.id) then return; end   -- our own, echoed back
             -- two of us in the same party saw the same drop: keep one, remember the other id
@@ -1503,13 +1662,24 @@ local function apply_op(op)
         b.shot = nil;   -- the picture is on their PC
         db.drops[#db.drops + 1] = b;
     elseif (k == 'drop_upd') then
+        if (type(b.id) ~= 'string') then return; end
         local d = drop_by_id(b.id);
-        if (d ~= nil) then d.lotted = b.lotted or d.lotted; end
+        if (d ~= nil) then d.lotted = U.sstr(b.lotted, 24) or d.lotted; end
     elseif (k == 'drop_rm') then
+        if (type(b.id) ~= 'string') then return; end
         local want = (db.aliases or {})[b.id] or b.id;
         for i, d in ipairs(db.drops) do if (d.id == want) then table.remove(db.drops, i); break; end end
     elseif (k == 'live') then
-        db.live[op.author] = { t = op.t, s = b };
+        if (type(op.author) ~= 'string') then return; end
+        local ev, rc, a = b.event, b.rc, b.auction;
+        local st = {};
+        if (type(ev) == 'table') then st.event = { name = U.sstr(ev.name, 48) or '?', mob = U.sstr(ev.mob, 64), ticks = U.fnum(ev.ticks, 0, 100000) or 0, started = U.fnum(ev.started, 0, 4102444800) }; end
+        if (type(rc) == 'table') then st.rc = { closes = U.fnum(rc.closes, 0, 4102444800) }; end
+        if (type(a) == 'table') then
+            st.auction = { item = U.sstr(a.item, 64) or '?', min = U.fnum(a.min, 0, 1000000), ends = U.fnum(a.ends, 0, 4102444800), sealed = (a.sealed == true),
+                           high = U.fnum(a.high, 0, 1000000), bidder = U.sstr(a.bidder, 24) };
+        end
+        db.live[op.author] = { t = when, s = st };
     end
     touch();
 end
@@ -1746,7 +1916,16 @@ local C = {
 local STATE_COL = { wait = C.dim, open = C.good, late = C.warn, dim = C.dim };
 local TABLE_FLAGS = nil;
 
-local function label(s) imgui.TextColored(C.dim, s); end
+local function label(s) imgui.PushStyleColor(ImGuiCol_Text, C.dim); imgui.TextWrapped(s); imgui.PopStyleColor(1); end
+-- SameLine at a fixed column, but never back over the text that is already there (long names, 11-01 review)
+function U.same_at(px) imgui.SameLine(); local x = imgui.GetCursorPosX(); imgui.SameLine(math.max(ui.px(px), x)); end
+function U.sorted_pairs(t)
+    local ks = {};
+    for k in pairs(t or {}) do ks[#ks + 1] = k; end
+    table.sort(ks, function (a, b) return tostring(a) < tostring(b); end);
+    local i = 0;
+    return function () i = i + 1; local k = ks[i]; if (k ~= nil) then return k, t[k]; end end;
+end
 local function section(s) imgui.Spacing(); imgui.TextColored(C.accent, s); end
 
 local function small_input_int(id, buf, w)
@@ -1814,7 +1993,7 @@ local function mob_combo(id, cur, w, timedOnly, extra)
             local okTimed = (not timedOnly) or ((m.e.minS ~= nil) and not m.e.forced);
             if okTimed and ((f == '') or m.key:lower():find(f, 1, true) or (m.e.zone or ''):lower():find(f, 1, true)) then
                 if imgui.Selectable(m.key .. id, m.key == cur) then out = m.key; ui.mobFilter[1] = ''; end
-                imgui.SameLine(ui.px(190));
+                U.same_at(190);
                 local t = db.tods[m.key];
                 if (t ~= nil) and (m.e.minS ~= nil) then
                     local txt, st = window_text(m.e, t.t, now);
@@ -1832,10 +2011,11 @@ end
 local function header()
     local now = os.time();
     local b = book();
+    if HK.setup_banner then HK.setup_banner(); end
     imgui.TextColored(C.accent, b and b.ls or 'This PC only');
     imgui.SameLine();
     if (b ~= nil) then
-        local st = b.revoked and 'access removed' or (b.err and ('sync problem: ' .. b.err))
+        local st = b.revoked and 'access removed' or (b.err and ('sync problem: ' .. tostring(b.err):sub(1, 40)))
             or (b.lastSync and ('synced %s ago'):format(dur(now - b.lastSync)) or 'connecting...');
         imgui.TextColored((b.err or b.revoked) and C.warn or C.dim, ('  %s  |  %s%s'):format(b.role or '?', st,
             (#db.outbox > 0) and ('  |  %d to send'):format(#db.outbox) or ''));
@@ -1905,7 +2085,7 @@ local function tab_standings()
         ui.sel = k;
     end
     local f = ui.filter[1]:lower();
-    if imgui.BeginTable('##standings', 6, TABLE_FLAGS, { 0, ui.sel and -ui.px(128) or 0 }) then
+    if imgui.BeginTable('##standings', 6, TABLE_FLAGS, { 0, (ui.sel and not read_only()) and -ui.px(128) or 0 }) then
         imgui.TableSetupScrollFreeze(0, 1);
         imgui.TableSetupColumn('Name', ImGuiTableColumnFlags_WidthStretch, 2.0);
         imgui.TableSetupColumn('DKP', ImGuiTableColumnFlags_WidthStretch, 1.0);
@@ -1979,12 +2159,13 @@ local function tab_standings()
         label('(an admin removes)');
     elseif (ui.confirmRemove == k) then
         imgui.PushStyleColor(ImGuiCol_Button, { 0.55, 0.18, 0.16, 1.0 });
+        imgui.PushStyleColor(ImGuiCol_Text, { 1.0, 1.0, 1.0, 1.0 });
         if imgui.Button('Really remove?') then
             record({ kind = 'roster', by = me(), text = ('removed %s from the roster (had %d DKP)'):format(k, m.dkp) });
             remove_member(k);
             ui.sel, ui.confirmRemove = nil, nil;
         end
-        imgui.PopStyleColor(1);
+        imgui.PopStyleColor(2);
     elseif imgui.Button('Remove') then
         ui.confirmRemove = k;
     end
@@ -2046,7 +2227,7 @@ local function tab_auction()
                 local col = b.void and C.dim or ((best ~= nil and b == best) and C.good or C.text);
                 imgui.TextColored(col, ('%s  %d%s'):format(b.name, b.amt, b.void and '  (replaced)' or ''));
                 if (not b.void) then
-                    imgui.SameLine(ui.px(220));
+                    U.same_at(220);
                     if imgui.SmallButton('Award##b' .. i) then
                         db.auction = nil;
                         award(b.name, b.amt, a.item, me(), a.drop);
@@ -2071,7 +2252,7 @@ local function tab_auction()
                 shown = shown + 1;
                 imgui.TextColored(C.text, d.item);
                 imgui.SameLine(); imgui.TextColored(C.dim, ('%s  %s'):format(d.mob ~= '' and d.mob or '', clock(d.t)));
-                imgui.SameLine(ui.px(380));
+                U.same_at(380);
                 if (db.auction == nil) and imgui.SmallButton('Auction##d' .. d.id) then start_auction(d.item, nil, me(), d.id); end
                 imgui.SameLine();
                 if imgui.SmallButton('Award##d' .. d.id) then ui.awardItem[1], ui.awardDrop = d.item, d.id; ui.awardPrice[1] = price_for(d.item); end
@@ -2101,12 +2282,12 @@ local function tab_timers()
     imgui.SameLine();
     imgui.Checkbox('Show every mob', ui.todAll);
     if (bookKey ~= 'local') then ui.share_switch(); end
-    if imgui.BeginTable('##tods', 4, TABLE_FLAGS, { 0, ui.todMob and -ui.px(90) or 0 }) then
+    if imgui.BeginTable('##tods', 4, TABLE_FLAGS, { 0, (ui.todMob and not read_only()) and -ui.px(100) or 0 }) then
         imgui.TableSetupScrollFreeze(0, 1);
         imgui.TableSetupColumn('Mob', ImGuiTableColumnFlags_WidthStretch, 1.4);
-        imgui.TableSetupColumn('Zone', ImGuiTableColumnFlags_WidthStretch, 1.4);
-        imgui.TableSetupColumn('Last ToD', ImGuiTableColumnFlags_WidthStretch, 1.2);
-        imgui.TableSetupColumn('Window', ImGuiTableColumnFlags_WidthStretch, 2.2);
+        imgui.TableSetupColumn('Zone', ImGuiTableColumnFlags_WidthStretch, 1.0);
+        imgui.TableSetupColumn('Last ToD', ImGuiTableColumnFlags_WidthStretch, 1.8);
+        imgui.TableSetupColumn('Window', ImGuiTableColumnFlags_WidthStretch, 2.8);
         imgui.TableHeadersRow();
         for _, r in ipairs(rows) do
             local e = r.m.e;
@@ -2137,7 +2318,7 @@ local function tab_timers()
         end
         if (#rows == 0) then
             imgui.TableNextRow(); imgui.TableNextColumn();
-            label('No ToDs yet. Kills you see log themselves; tick "Show every mob" to set one.');
+            label('No ToDs yet.');
         end
         imgui.EndTable();
     end
@@ -2154,18 +2335,18 @@ local function tab_timers()
     elseif imgui.Button('Killed now') then
         set_tod(key, os.time(), me(), key, false);
     end
-    imgui.SameLine();
+    -- the time controls take their own line: with an HQ name in the kill button the one-line row ran off the window (Heaph 11-01)
     imgui.SetNextItemWidth(ui.px(130));
-    imgui.InputTextWithHint('##todw', '21:43 or -15m', ui.todWhen, 16);
+    imgui.InputTextWithHint('##todw', '21:43, -15m, 9:43pm et', ui.todWhen, 24);
     imgui.SameLine();
     if button('Set time', ui.todWhen[1] ~= '') then
         local t = parse_when(ui.todWhen[1]);
-        if (t ~= nil) then set_tod(key, t, me(), key, false); ui.todWhen[1] = ''; else print(TAG .. 'Time: 21:43, 9:43pm or -15m.'); end
+        if (t ~= nil) then set_tod(key, t, me(), key, false); ui.todWhen[1] = ''; else print(TAG .. 'Time: 21:43, 9:43pm, -15m, or with a zone: 21:43 et.'); end
     end
     imgui.SameLine();
     if button('Post to LS', db.tods[key] ~= nil) then
         local t = db.tods[key];
-        post(('%s ToD %s, %s.'):format(key, stamp(t.t), (window_text(e, t.t, now))));
+        post(('%s ToD %s %s, %s.'):format(key, stamp(t.t), zone(), (window_text(e, t.t, now))));
     end
     imgui.SameLine();
     if button('Clear', db.tods[key] ~= nil) then clear_tod(key); end
@@ -2188,8 +2369,8 @@ local function tab_attendance()
             imgui.SameLine(); imgui.SetNextItemWidth(ui.px(170));
             imgui.InputTextWithHint('##evn', 'e.g. Dynamis Xarcabard', ui.evName, 48);
         end
-        imgui.SameLine();
         local other = (ui.campMob == 'Other (type a name)');
+        if (not other) then imgui.SameLine(); end
         if button('Start camp', (ui.campMob ~= nil) and ((not other) or ui.evName[1] ~= '')) then
             if other then start_event(ui.evName[1], me()); else start_event(nil, me(), ui.campMob); end
             ui.evName[1] = '';
@@ -2229,12 +2410,12 @@ local function tab_attendance()
     table.sort(autos);
     for _, key in ipairs(autos) do
         imgui.TextColored(C.text, key);
-        imgui.SameLine(ui.px(160));
+        U.same_at(160);
         local at = auto_start_time(key);
         if (db.event ~= nil) and (db.event.mob == key) then imgui.TextColored(C.good, 'running now');
         elseif at then imgui.TextColored(C.accent, ('starts %s (in %s)'):format(clock(at), dur(at - os.time())));
         else imgui.TextColored(C.dim, 'waiting for a ToD'); end
-        imgui.SameLine(ui.px(420));
+        U.same_at(420);
         if imgui.SmallButton('Remove##au' .. key) then set_auto(key, false); end
     end
     ui.autoMob = mob_combo('##automob', ui.autoMob, 220, true);
@@ -2264,7 +2445,7 @@ local function tab_attendance()
             for _, n in ipairs(names) do
                 local on = (here[n] or rc.auto[n] or rc.replied[n]) and not rc.excluded[n];
                 local b = { on and true or false };
-                if (col > 0) then imgui.SameLine(col * 150); end
+                if (col > 0) then imgui.SameLine(col * ui.px(175)); end
                 if imgui.Checkbox(n .. '##rc', b) then
                     if b[1] then rc.excluded[n] = nil; rc.replied[n] = true; member(n);
                     else rc.excluded[n] = true; rc.replied[n] = nil; end
@@ -2303,12 +2484,12 @@ end
 
 ---------------------------------------------------------------------------------------------------------------------
 local function tab_loot()
-    if imgui.BeginTable('##loot', 5, TABLE_FLAGS, { 0, ui.lootSel and -ui.px(40) or 0 }) then
+    if imgui.BeginTable('##loot', 5, TABLE_FLAGS, { 0, (ui.lootSel and not read_only()) and -ui.px(64) or 0 }) then
         imgui.TableSetupScrollFreeze(0, 1);
         imgui.TableSetupColumn('When', ImGuiTableColumnFlags_WidthStretch, 1.1);
         imgui.TableSetupColumn('Item', ImGuiTableColumnFlags_WidthStretch, 1.6);
         imgui.TableSetupColumn('From', ImGuiTableColumnFlags_WidthStretch, 1.2);
-        imgui.TableSetupColumn('Went to', ImGuiTableColumnFlags_WidthStretch, 1.6);
+        imgui.TableSetupColumn('Went to', ImGuiTableColumnFlags_WidthStretch, 2.2);
         imgui.TableSetupColumn('Shot', ImGuiTableColumnFlags_WidthFixed, ui.px(30));
         imgui.TableHeadersRow();
         for i = #db.drops, 1, -1 do
@@ -2331,7 +2512,7 @@ local function tab_loot()
         end
         if (#db.drops == 0) then
             imgui.TableNextRow(); imgui.TableNextColumn();
-            label('Drops from tracked mobs (and anything during an event) show up here.');
+            label('No drops yet.');
         end
         imgui.EndTable();
     end
@@ -2349,7 +2530,7 @@ local function tab_loot()
     end
     imgui.SameLine();
     if button('Open screenshot', d.shot ~= nil) then ashita.misc.open_url(d.shot); end
-    imgui.SameLine(); label('min price'); imgui.SameLine();
+    label('min price'); imgui.SameLine();
     ui.lootMin = ui.lootMin or { 0 };
     if (ui.lootMinFor ~= d.id) then ui.lootMinFor, ui.lootMin[1] = d.id, price_for(d.item); end
     small_input_int('##lootmin', ui.lootMin, 60);
@@ -2369,7 +2550,7 @@ local function tab_history()
     imgui.SameLine();
     if button('Undo last change', not read_only()) then
         local e = undo_last(me());
-        print(TAG .. (e and ('Undid: ' .. (e.text or e.kind)) or 'Nothing to undo.'));
+        print(TAG .. (e and ('Undid: ' .. U.hist_line(e)) or 'Nothing to undo.'));
     end
     imgui.SameLine();
     if imgui.Button('Export CSV') then run('export', ''); end
@@ -2379,12 +2560,12 @@ local function tab_history()
     if imgui.BeginChild('##hist', { 0, 0 }, ImGuiChildFlags_Borders) then
         for i = #db.history, 1, -1 do
             local e = db.history[i];
-            local line = tostring(e.text or e.kind);
+            local line = U.hist_line(e);
             if (f == '') or line:lower():find(f, 1, true) or table.concat(e.names or {}, ' '):lower():find(f, 1, true) then
-                imgui.TextColored(C.dim, stamp(e.t));
-                imgui.SameLine();
-                imgui.TextColored(e.undone and C.dim or (e.kind == 'win' and C.accent or C.text), line .. (e.undone and '  (undone)' or ''));
-                if (e.by ~= nil) and (e.by ~= 'auto') then imgui.SameLine(); imgui.TextColored(C.dim, 'by ' .. e.by); end
+                imgui.PushStyleColor(ImGuiCol_Text, e.undone and C.dim or (e.kind == 'win' and C.accent or C.text));
+                imgui.TextWrapped(('%s  %s%s%s'):format(stamp(e.t), line, e.undone and '  (undone)' or '',
+                    ((e.by ~= nil) and (e.by ~= 'auto')) and ('  by ' .. e.by) or ''));
+                imgui.PopStyleColor(1);
             end
         end
     end
@@ -2454,7 +2635,7 @@ local function tab_settings()
                 imgui.Spacing();
                 label('What each role can do from chat:');
                 for _, a in ipairs(ACTIONS) do
-                    imgui.TextColored(C.text, a.label); imgui.SameLine(ui.px(210));
+                    imgui.TextColored(C.text, a.label); U.same_at(210);
                     local nr = combo('##need' .. a.key, db.cfg.need[a.key], ROLES, 100);
                     if (nr ~= db.cfg.need[a.key]) then db.cfg.need[a.key] = nr; touch(); end
                 end
@@ -2481,7 +2662,7 @@ local function tab_settings()
                 table.sort(keys);
                 for _, kk in ipairs(keys) do
                     local p = db.prices[kk];
-                    imgui.TextColored(C.text, p.name); imgui.SameLine(ui.px(220));
+                    imgui.TextColored(C.text, p.name); U.same_at(220);
                     local v = { p.min }; small_input_int('##pv' .. kk, v, 70);
                     if (v[1] ~= p.min) and not imgui.IsItemActive() then set_price(kk, p.name, math.max(0, v[1])); end
                     if (v[1] ~= p.min) and imgui.IsItemActive() then p.min = math.max(0, v[1]); end
@@ -2505,11 +2686,12 @@ local function tab_settings()
                 local sm = combo('##shot', db.cfg.shotMode, { 'tracked', 'all', 'off' }, 100);
                 if (sm ~= db.cfg.shotMode) then db.cfg.shotMode = sm; touch(); end
                 imgui.SameLine(); label('tracked = HNM/NM drops, priced items, anything during an event');
+                label('Only officers and leaders take drop screenshots; viewers never do.');
                 section('Extra mobs to time');
-                for name, c in pairs(db.custom) do
-                    imgui.TextColored(C.text, name); imgui.SameLine(ui.px(200));
+                for name, c in U.sorted_pairs(db.custom) do
+                    imgui.TextColored(C.text, name); U.same_at(200);
                     imgui.TextColored(C.dim, ('%s - %s'):format(dur(c.minS), dur(c.maxS)));
-                    imgui.SameLine(ui.px(330)); if imgui.SmallButton('Remove##c' .. name) then del_custom(name); end
+                    U.same_at(330); if imgui.SmallButton('Remove##c' .. name) then del_custom(name); end
                 end
                 imgui.SetNextItemWidth(ui.px(160)); imgui.InputTextWithHint('##tn', 'Mob name', ui.trackName, 32);
                 imgui.SameLine(); label('respawn'); imgui.SameLine(); small_input_int('##tl', ui.trackLo, 40);
@@ -2542,9 +2724,9 @@ local function tab_settings()
                     section('API keys (bots, Discord, websites)');
                     label('A key reads the book (viewer) or also writes ToDs, adjustments and awards (officer), signed as bot:<label>.');
                     for _, k in ipairs(db.keys or {}) do
-                        imgui.TextColored(C.text, k.name); imgui.SameLine(ui.px(170));
+                        imgui.TextColored(C.text, k.name); U.same_at(170);
                         imgui.TextColored(C.dim, ('%s, used %s'):format(k.role, (k.last_seen or 0) > 0 and (dur(os.time() - k.last_seen) .. ' ago') or 'never'));
-                        imgui.SameLine(ui.px(360));
+                        U.same_at(360);
                         if imgui.SmallButton('Revoke##k' .. k.name) then HK.revoke_key(k.label); end
                     end
                     imgui.SetNextItemWidth(ui.px(140)); imgui.InputTextWithHint('##klabel', 'Label, e.g. Discord', ui.keyLabel, 20);
@@ -2574,15 +2756,15 @@ local function tab_members()
             label('Shared book: roles live on the server. viewer = can open the book, officer = can run it,');
             label('admin = also roles and roster. Only the owner makes admins. Invites go out by tell to that character,');
             label('so a name is registered only by the player who holds it; every change is signed with the sender\'s name.');
-            for name, r in pairs(db.perms) do
-                imgui.TextColored(C.text, name); imgui.SameLine(ui.px(150));
+            for name, r in U.sorted_pairs(db.perms) do
+                imgui.TextColored(C.text, name); U.same_at(150);
                 local sn = db.seen[name];
                 if (sn ~= nil) and (sn.joined ~= nil) then
                     imgui.TextColored(C.dim, ('joined %s, seen %s ago'):format(os.date('%m/%d', sn.joined), dur(os.time() - (sn.last or sn.joined))));
                 else
                     imgui.TextColored(C.warn, 'invited, not joined');
                 end
-                imgui.SameLine(ui.px(390));
+                U.same_at(390);
                 if (r == 'owner') or (not can_manage()) then imgui.TextColored(C.accent, r);
                 else
                     local nr = combo('##pr' .. name, r, SROLES, 90);
@@ -2598,12 +2780,12 @@ local function tab_members()
                 imgui.SameLine();
                 local tn = HK.target_name();
                 if button(tn and ('Invite target: ' .. tn) or 'Invite target', tn ~= nil) then add_member(tn); send_invite(tn, ui.permRole); end
-                if imgui.IsItemHovered() then imgui.SetTooltip('The player you have targeted gets the role picked on the left.'); end
+                if imgui.IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled or 0) then imgui.SetTooltip('The player you have targeted gets the role picked on the left.'); end
             end
         else
             label(('You (%s) are always admin. Anyone not listed here is a member. Roles only matter for chat control.'):format(me() or '?'));
-            for name, r in pairs(db.perms) do
-                imgui.TextColored(C.text, name); imgui.SameLine(ui.px(150));
+            for name, r in U.sorted_pairs(db.perms) do
+                imgui.TextColored(C.text, name); U.same_at(150);
                 local nr = combo('##pr' .. name, r, ROLES, 100);
                 if (nr ~= r) then set_role(name, nr); end
                 imgui.SameLine(); if imgui.SmallButton('Remove##p' .. name) then set_role(name, 'member'); end
@@ -2632,9 +2814,9 @@ local function tab_members()
             for _, n in ipairs(names) do
                 local a = HK.rollcall[n];
                 local inBook = (db.perms[n] ~= nil);
-                imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
+                imgui.TextColored(C.text, n); U.same_at(150);
                 imgui.TextColored(inBook and C.good or C.dim, inBook and ('in the book (%s)'):format(db.perms[n]) or ('has HeaphKP %s'):format(a.ver));
-                imgui.SameLine(ui.px(340));
+                U.same_at(340);
                 if (not inBook) then
                     fresh = fresh + 1;
                     if button('Invite##rc' .. n, canInv) then add_member(n); send_invite(n, ui.rcRole or 'viewer'); end
@@ -2654,37 +2836,13 @@ local function tab_members()
             section(('Join requests (%d typed !join heaphkp)'):format(#reqs));
             local canInv = (bookKey ~= 'local') and can_manage();
             for _, n in ipairs(reqs) do
-                imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
+                imgui.TextColored(C.text, n); U.same_at(150);
                 if (db.perms[n] ~= nil) then
                     imgui.TextColored(C.good, ('already in the book (%s)'):format(db.perms[n]));
                     imgui.SameLine(); if imgui.SmallButton('Dismiss##jr' .. n) then HK.joinReq[n] = nil; end
                 else
                     imgui.TextColored(C.dim, ('asked %s ago'):format(dur(os.time() - HK.joinReq[n])));
-                    imgui.SameLine(ui.px(340));
-                    if button('Approve##jr' .. n, canInv) then HK.approve_join(n, ui.rcRole or 'viewer'); end
-                    imgui.SameLine(); if imgui.SmallButton('Dismiss##jd' .. n) then HK.joinReq[n] = nil; end
-                end
-            end
-            if button(('Approve all as %s'):format(ui.rcRole or 'viewer'), canInv) then
-                for _, n in ipairs(reqs) do if (db.perms[n] == nil) then HK.approve_join(n, ui.rcRole or 'viewer'); else HK.joinReq[n] = nil; end end
-            end
-            if (not canInv) then label(bookKey == 'local' and 'Share the book (Turn on DKP) to approve them.' or 'Only the owner or an admin approves.'); end
-        end
-
-        local reqs = {};
-        for n in pairs(HK.joinReq or {}) do reqs[#reqs + 1] = n; end
-        table.sort(reqs);
-        if (#reqs > 0) then
-            section(('Join requests (%d typed !join heaphkp)'):format(#reqs));
-            local canInv = (bookKey ~= 'local') and can_manage();
-            for _, n in ipairs(reqs) do
-                imgui.TextColored(C.text, n); imgui.SameLine(ui.px(150));
-                if (db.perms[n] ~= nil) then
-                    imgui.TextColored(C.good, ('already in the book (%s)'):format(db.perms[n]));
-                    imgui.SameLine(); if imgui.SmallButton('Dismiss##jr' .. n) then HK.joinReq[n] = nil; end
-                else
-                    imgui.TextColored(C.dim, ('asked %s ago'):format(dur(os.time() - HK.joinReq[n])));
-                    imgui.SameLine(ui.px(340));
+                    U.same_at(340);
                     if button('Approve##jr' .. n, canInv) then HK.approve_join(n, ui.rcRole or 'viewer'); end
                     imgui.SameLine(); if imgui.SmallButton('Dismiss##jd' .. n) then HK.joinReq[n] = nil; end
                 end
@@ -2701,8 +2859,59 @@ local function tab_members()
 end
 
 ---------------------------------------------------------------------------------------------------------------------
+-- "Set up a linkshell" for LS leaders (Heaph 11-01): the whole path on one card with the one button that matters.
+-- Shown by itself whenever you have your own linkshell item equipped and it has no shared book yet, or on /hkp setup.
+local function owned_ls_without_book()
+    for _, l in ipairs(equipped_ls()) do
+        if l.owner then return l, access.books[l.name:lower()]; end
+    end
+    return nil, nil;
+end
+local function setup_card()
+    local mine, has = owned_ls_without_book();
+    local show = ui.setupOpen or ((mine ~= nil) and (has == nil) and (not ui.setupHidden));
+    if (not show) then return; end
+    section('Set up a linkshell (LS leaders)');
+    local function step(n, done, text)
+        imgui.TextColored(done and C.good or C.accent, done and ('%d. done'):format(n) or ('%d.'):format(n));
+        imgui.SameLine(); label(text);
+    end
+    local officers, members = 0, 0;
+    for n, r in pairs(db.perms) do
+        if (n ~= me()) then
+            if (r == 'officer') or (r == 'admin') then officers = officers + 1; else members = members + 1; end
+        end
+    end
+    step(1, mine ~= nil, 'Equip the linkshell item itself, not a sack or pearl. ' .. (mine and ('Found: ' .. mine.name .. '.') or 'Nothing you own is equipped yet.'));
+    step(2, has ~= nil, 'Turn on DKP. This registers the linkshell on the sync server with you as owner; nobody else can do it.');
+    if (mine ~= nil) and (has == nil) then
+        if (bookKey == 'local') then imgui.Checkbox("Bring this PC's book along (members, ToDs, history)", ui.bring); end
+        if button(('Turn on DKP for %s'):format(mine.name), net ~= nil) then register_ls(mine.name, ui.bring[1] and (bookKey == 'local')); end
+        if (net == nil) then label('The network library did not load; see Settings > Server.'); end
+    end
+    step(3, officers > 0, 'Invite your officers: target one and type /hkp invite t officer, or use the Members tab. Officers run auctions, ToDs and ticks.');
+    step(4, members > 0, 'Tell the LS. Anyone who types !join heaphkp in LS chat shows up on the Members tab for you to approve as a viewer.');
+    step(5, db.cfg.chatCommands == true, 'Optional: Settings > Chat lets officers run !tod, !auction and !rc straight from LS chat.');
+    if (lsMsg ~= nil) then imgui.TextColored(C.accent, lsMsg); end
+    if imgui.SmallButton(ui.setupOpen and 'Hide these steps' or 'Hide this until next time') then ui.setupOpen, ui.setupHidden = false, true; end
+    imgui.Separator();
+end
+HK.open_setup = function ()
+    ui.open[1] = true;
+    ui.goTab, ui.setupOpen, ui.setupHidden = 'Linkshells', true, nil;
+end
+HK.setup_banner = function ()
+    if (bookKey ~= 'local') or ui.setupHidden then return; end
+    local mine, has = owned_ls_without_book();
+    if (mine == nil) or (has ~= nil) then return; end
+    imgui.TextColored(C.warn, ('You own %s and it has no shared DKP book yet.'):format(mine.name));
+    imgui.SameLine();
+    if imgui.SmallButton('Set it up') then HK.open_setup(); end
+end
+
 local function tab_linkshells()
     local now = os.time();
+    setup_card();
     if (bookKey ~= 'local') then section('ToD sharing'); ui.share_switch(); end
     section('Your linkshells');
     local eq = equipped_ls();
@@ -2710,9 +2919,9 @@ local function tab_linkshells()
     for _, l in ipairs(eq) do
         local key = l.name:lower();
         imgui.TextColored(C.text, l.name);
-        imgui.SameLine(ui.px(170));
+        U.same_at(170);
         imgui.TextColored(l.owner and C.accent or C.dim, l.owner and 'Linkshell (you own it)' or l.kind);
-        imgui.SameLine(ui.px(340));
+        U.same_at(340);
         local b = access.books[key];
         if (b ~= nil) then
             if (bookKey == key) then imgui.TextColored(C.good, 'open now');
@@ -2746,8 +2955,8 @@ local function tab_linkshells()
 
     section('Books you can open');
     imgui.TextColored(C.text, 'This PC only');
-    imgui.SameLine(ui.px(170)); label('not shared');
-    imgui.SameLine(ui.px(340));
+    U.same_at(170); label('not shared');
+    U.same_at(340);
     if (bookKey == 'local') then imgui.TextColored(C.good, 'open now'); elseif imgui.SmallButton('Open##local') then switch_book('local'); end
     local keys = {};
     for k in pairs(access.books) do keys[#keys + 1] = k; end
@@ -2755,9 +2964,9 @@ local function tab_linkshells()
     for _, k in ipairs(keys) do
         local b = access.books[k];
         imgui.TextColored(C.text, b.ls);
-        imgui.SameLine(ui.px(170));
+        U.same_at(170);
         imgui.TextColored(b.revoked and C.bad or C.dim, b.revoked and 'access removed' or (b.role or '?'));
-        imgui.SameLine(ui.px(340));
+        U.same_at(340);
         if (bookKey == k) then imgui.TextColored(C.good, 'open now');
         elseif imgui.SmallButton('Open##b' .. k) then switch_book(k); end
         imgui.SameLine();
@@ -2910,6 +3119,7 @@ function ui.apply_theme_colors()
         local v = (t.C and t.C[k]) or ui.BASE_C[k];
         if (v ~= nil) then C[k] = v; end
     end
+    STATE_COL.wait, STATE_COL.open, STATE_COL.late, STATE_COL.dim = C.dim, C.good, C.warn, C.dim;   -- the ToD table colours follow the theme too
 end
 
 local function push_style()
@@ -3211,7 +3421,7 @@ local function draw()
     draw_pill();
     if ui.open[1] then
         imgui.SetNextWindowSize({ ui.px(720), ui.px(540) }, ImGuiCond_FirstUseEver);
-        imgui.SetNextWindowSizeConstraints({ ui.px(520), ui.px(360) }, { 8000, 8000 });
+        imgui.SetNextWindowSizeConstraints({ ui.px(660), ui.px(360) }, { 8000, 8000 });
         if imgui.Begin('##heaphkp_main', ui.open, bit.bor(ImGuiWindowFlags_NoTitleBar, ImGuiWindowFlags_NoCollapse)) then
             card();
             push_font();
@@ -3398,7 +3608,7 @@ ashita.events.register('command', 'heaphkp_command', function (e)
     if (cmd == 'help') then
         print(TAG .. 'start <event> | stop | rc | auction <item> [min] | close | cancel | award <name> <price> <item>');
         print(TAG .. 'add <name> <+/-n> [why] | tod <mob> [now|21:43|-15m] | role <name> <role> | price <item> <min>');
-        print(TAG .. 'track <mob> <minH> <maxH> | undo | export');
+        print(TAG .. 'track <mob> <minH> <maxH> | undo | export | setup (LS leaders)');
         return;
     end
     if (KNOWN[cmd] == nil) then print(TAG .. 'Unknown command. /dkp help'); return; end

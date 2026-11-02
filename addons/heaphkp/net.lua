@@ -26,6 +26,44 @@ local function parse_url(url)
     return scheme, host, port, path;
 end
 
+-- Does the certificate name the host we connected to? LuaSec checks the chain but not the name (11-01 security review).
+local function host_matches(cert, host)
+    host = tostring(host or ''):lower();
+    local function one(pat)
+        pat = tostring(pat or ''):lower();
+        if (pat == host) then return true; end
+        local tail = pat:match('^%*%.(.+)$');
+        if tail then
+            local h = host:match('^[^%.]+%.(.+)$');
+            return (h ~= nil) and (h == tail);
+        end
+        return false;
+    end
+    local okx, exts = pcall(function () return cert:extensions(); end);
+    if okx and (type(exts) == 'table') then
+        for _, ext in pairs(exts) do
+            if (type(ext) == 'table') and ((ext.name == 'subjectAltName') or (ext.oid == '2.5.29.17')) then
+                for _, names in pairs(ext) do
+                    if (type(names) == 'table') then
+                        for _, v in pairs(names) do
+                            if (type(v) == 'string') and one(v) then return true; end
+                            if (type(v) == 'table') and (type(v[1]) == 'string') and one(v[1]) then return true; end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local oks, subj = pcall(function () return cert:subject(); end);
+    if oks and (type(subj) == 'table') then
+        for _, f in ipairs(subj) do
+            if (type(f) == 'table') and ((f.name == 'commonName') or (f.oid == '2.5.4.3')) and one(f.value) then return true; end
+        end
+    end
+    return false;
+end
+M.host_matches = host_matches;
+
 local function tls_params(host)
     local p = { mode = 'client', protocol = 'any', options = 'all', verify = 'none' };
     if M.verify and (M.cafile ~= nil) then p.verify = 'peer'; p.cafile = M.cafile; end
@@ -95,6 +133,12 @@ local function request_async(scheme, host, port, path, payload, timeout)
             if (herr == 'wantread') or (herr == 'wantwrite') or (herr == 'timeout') then wait();
             else error('tls: ' .. tostring(herr) .. (M.verify and ' (certificate check; see Settings > Sync server)' or ''), 0); end
         end
+        if M.verify and (M.cafile ~= nil) then
+            local cert = conn.getpeercertificate and conn:getpeercertificate() or nil;
+            if (cert == nil) or (not host_matches(cert, host)) then
+                error('tls: the certificate is not for ' .. tostring(host) .. ' (certificate check; see Settings > Sync server)', 0);
+            end
+        end
     end
     local req = table.concat({
         ('POST %s HTTP/1.0'):format(path), 'Host: ' .. host, 'User-Agent: heaphkp/1.3', 'Content-Type: application/json',
@@ -149,7 +193,7 @@ end
 -- cb(ok, status, reply): reply is the decoded JSON table, or an error message when ok is false.
 function M.post(url, body, cb)
     local scheme, host, port, path = parse_url(url);
-    if (scheme == nil) then cb(false, 0, 'the server address must start with https://'); return; end
+    if (scheme ~= 'https') then cb(false, 0, 'the server address must start with https:// (tokens never go over plain http)'); return; end
     if (scheme == 'https') and (not okSsl) then cb(false, 0, 'the ssl library did not load (socket.ssl)'); return; end
     local payload = json.encode(body);
     local function finish(okRun, status, raw)

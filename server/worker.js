@@ -30,6 +30,8 @@ const INVITE_SECONDS = 3600;   // Heaph 10-30: join codes last one hour
 const KINDS = new Set(['rec', 'undo', 'member', 'member_rm', 'role', 'price', 'price_rm', 'tod', 'tod_clear',
     'custom', 'custom_rm', 'auto', 'drop', 'drop_upd', 'drop_rm', 'live', 'settings']);
 const MAX_OPS = 200;
+const OPS_PER_DAY_OFFICER = 3000;   // changes one account may push in a day (11-01 review: a viewer token could fill the book)
+const OPS_PER_DAY_VIEWER = 200;
 const MAX_BODY = 4000;
 const PULL = 500;
 
@@ -104,6 +106,55 @@ async function roleList(db, lsId) {
 }
 
 // Identity: whatever a client claims inside a change, the author is the character the token was issued to.
+// Every op body is checked for shape before it is stored: one bad value in the log used to break every client in the
+// linkshell, and the server's own snapshot, for good (11-01 security review). Returns null when the body is fine.
+const BAD_KEY = new Set(['__proto__', 'constructor', 'prototype']);
+const num = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+const str = (v, n) => typeof v === 'string' && v.length > 0 && v.length <= n;
+const optStr = (v, n) => v === undefined || v === null || str(v, n);
+const optNum = (v, lo, hi) => v === undefined || v === null || num(v, lo, hi);
+const key = v => str(v, 64) && !BAD_KEY.has(v);
+function shape(kind, b, t) {
+    const DAY3 = 3 * 86400;
+    switch (kind) {
+        case 'rec': {
+            if (!key(b.id) || !str(b.kind, 16) || !optStr(b.text, 200)) return 'bad record';
+            if (!optNum(b.t, t - DAY3, t + DAY3) || !optNum(b.at, t - DAY3, t + DAY3)) return 'bad time';
+            if (!optStr(b.mob, 64) || !optStr(b.item, 64) || !optStr(b.drop, 64)) return 'bad record';
+            if (b.deltas !== undefined) {
+                if (!Array.isArray(b.deltas) || b.deltas.length > 64) return 'bad deltas';
+                for (const d of b.deltas) if (!d || typeof d !== 'object' || !charName(d.n) || d.n !== charName(d.n) || !num(d.d, -1000000, 1000000)) return 'bad deltas';
+            }
+            if (b.names !== undefined) {
+                if (!Array.isArray(b.names) || b.names.length > 64) return 'bad names';
+                for (const n of b.names) if (!str(n, 24) || BAD_KEY.has(n)) return 'bad names';
+            }
+            return null;
+        }
+        case 'undo': return key(b.id) ? null : 'bad undo';
+        case 'member': case 'member_rm': return (charName(b.n) && b.n === charName(b.n)) ? null : 'bad name';
+        case 'role': return (charName(b.n) && b.n === charName(b.n) && ROLE_SET.has(b.r)) ? null : 'bad role';
+        case 'price': return (key(b.k) && str(b.name, 64) && num(b.min, 0, 1000000)) ? null : 'bad price';
+        case 'price_rm': return key(b.k) ? null : 'bad price';
+        case 'custom': return (key(b.name) && b.name.length <= 32 && num(b.minS, 60, 30 * 86400) && num(b.maxS, 60, 30 * 86400) && b.maxS >= b.minS) ? null : 'bad timer';
+        case 'custom_rm': return key(b.name) ? null : 'bad timer';
+        case 'auto': return key(b.key) ? null : 'bad auto';
+        case 'tod': return (key(b.key) && b.v && typeof b.v === 'object' && num(b.v.t, t - DAY3, t + DAY3) && optStr(b.v.form, 64) && optNum(b.v.streak, 0, 1000)) ? null : 'bad ToD';
+        case 'tod_clear': return key(b.key) ? null : 'bad ToD';
+        case 'drop': return (key(b.id) && optNum(b.t, 0, 4102444800) && optStr(b.item, 64) && optStr(b.mob, 64) && optNum(b.slot, 0, 100) && optNum(b.itemId, 0, 100000) && optNum(b.price, 0, 1000000) && optStr(b.lotted, 24) && optStr(b.awarded, 24)) ? null : 'bad drop';
+        case 'drop_upd': return (key(b.id) && optStr(b.lotted, 24)) ? null : 'bad drop';
+        case 'drop_rm': return key(b.id) ? null : 'bad drop';
+        case 'live': {
+            const ev = b.event, rc = b.rc, a = b.auction;
+            if (ev != null && (typeof ev !== 'object' || !optStr(ev.name, 48) || !optStr(ev.mob, 64) || !optNum(ev.ticks, 0, 100000) || !optNum(ev.started, 0, 4102444800))) return 'bad live';
+            if (rc != null && (typeof rc !== 'object' || !optNum(rc.closes, 0, 4102444800))) return 'bad live';
+            if (a != null && (typeof a !== 'object' || !optStr(a.item, 64) || !optNum(a.min, 0, 1000000) || !optNum(a.ends, 0, 4102444800) || !optNum(a.high, 0, 1000000) || !optStr(a.bidder, 24))) return 'bad live';
+            return null;
+        }
+        default: return null;   // 'settings' and anything else in KINDS: stored as-is, never applied to the snapshot
+    }
+}
+
 function stampAuthor(body, name) {
     if (!body || typeof body !== 'object') return body;
     if ('by' in body) body.by = name;
@@ -194,6 +245,8 @@ async function sync(db, b) {
     const inserts = [];
     const cnt = ops.length ? await db.prepare('SELECT COUNT(*) AS n FROM ops WHERE ls_id = ?').bind(me.lsId).first() : { n: 0 };
     const full = cnt.n + ops.length > MAX_LS_OPS;
+    const used = ops.length ? await db.prepare('SELECT COUNT(*) AS n FROM ops WHERE ls_id = ? AND author = ? AND t > ?').bind(me.lsId, me.name, now() - 86400).first() : { n: 0 };
+    const overQuota = used.n + ops.length > (LEVEL[me.role] >= LEVEL.officer ? OPS_PER_DAY_OFFICER : OPS_PER_DAY_VIEWER);
     for (const op of ops) {
         const cid = String(op.cid || '').slice(0, 64), kind = String(op.kind || '');
         const stamped = stampAuthor((op.body && typeof op.body === 'object') ? op.body : {}, me.name);
@@ -202,9 +255,11 @@ async function sync(db, b) {
         if (cid && await db.prepare('SELECT 1 FROM ops WHERE ls_id = ? AND cid = ?').bind(me.lsId, cid).first()) continue;   // already stored: a resend
         if (!cid || !KINDS.has(kind)) why = 'unknown change';
         else if (full) why = 'this book is full; the owner should start a new one';
+        else if (overQuota) why = 'too many changes from this account today';
         else if (body.length > MAX_BODY) why = 'too big';
         else if (LEVEL[me.role] < LEVEL.officer && !VIEWER_KINDS.has(kind)) why = 'viewers cannot change the book';
         else if (ADMIN_KINDS.has(kind) && LEVEL[me.role] < LEVEL.admin) why = 'needs admin';
+        else if ((why = shape(kind, stamped, now())) !== null) { /* rejected below */ }
         else if (kind === 'role') why = await applyRole(db, me, stamped);
         if (why) { rejected.push({ cid, why }); continue; }
         inserts.push(db.prepare('INSERT OR IGNORE INTO ops (ls_id, cid, author, kind, body, t) VALUES (?, ?, ?, ?, ?, ?)')
@@ -285,7 +340,10 @@ function emptyBook() { return { seq: 0, members: {}, tods: {}, prices: {}, custo
 
 function applyOp(st, op) {
     const b = op.body || {}, k = op.kind;
-    const member = n => (st.members[n] = st.members[n] || { dkp: 0, earned: 0, spent: 0, ticks: 0 });
+    const member = n => {
+        if (!charName(n) || n !== charName(n)) return { dkp: 0, earned: 0, spent: 0, ticks: 0 };   // a throwaway: never a prototype key
+        return (st.members[n] = st.members[n] || { dkp: 0, earned: 0, spent: 0, ticks: 0 });
+    };
     if (k === 'rec') {
         if (!b.id || st.ids[b.id]) return;
         st.ids[b.id] = 1;
@@ -297,7 +355,7 @@ function applyOp(st, op) {
             const want = st.aliases[b.drop] || b.drop;
             for (const dr of st.drops) if (dr.id === want) { dr.awarded = b.deltas[0].n; dr.price = -b.deltas[0].d; }
         }
-        st.history.push({ id: b.id, t: b.t || op.t, kind: b.kind, by: op.author, text: b.text, deltas: b.deltas, names: b.names, mob: b.mob, item: b.item });
+        st.history.push({ id: b.id, t: b.t || op.t, kind: b.kind, by: op.author, text: b.text, at: (typeof b.at === 'number' && b.at > 0 && b.at < 4102444800) ? b.at : undefined, deltas: b.deltas, names: b.names, mob: b.mob, item: b.item });
         if (st.history.length > 3000) st.history.splice(0, st.history.length - 3000);
     } else if (k === 'undo') {
         const e = st.history.find(x => x.id === b.id);
@@ -335,7 +393,10 @@ async function materialize(db, lsId) {
     const from = st.seq;
     for (;;) {
         const rows = await db.prepare('SELECT seq, author, kind, body, t FROM ops WHERE ls_id = ? AND seq > ? ORDER BY seq LIMIT 2000').bind(lsId, st.seq).all();
-        for (const r of rows.results) applyOp(st, { seq: r.seq, author: r.author, kind: r.kind, body: JSON.parse(r.body), t: r.t });
+        for (const r of rows.results) {
+            try { applyOp(st, { seq: r.seq, author: r.author, kind: r.kind, body: JSON.parse(r.body), t: r.t }); }
+            catch (e) { st.seq = r.seq; }   // an op the snapshot cannot apply is skipped, not fatal (pre-validation ops may exist)
+        }
         if (rows.results.length < 2000) break;
     }
     if (st.seq !== from) await db.prepare('INSERT OR REPLACE INTO snapshots (ls_id, seq, json) VALUES (?, ?, ?)').bind(lsId, st.seq, JSON.stringify(st)).run();

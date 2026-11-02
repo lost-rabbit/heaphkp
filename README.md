@@ -8,7 +8,7 @@ Linkshell DKP for PhoenixXI, run from one window inside the game. Ashita v4 addo
 - **Auctions**: minimum prices per item, open or sealed bidding, late bids extend the clock, nobody can bid past their
   balance, the winner is charged automatically. Bids come from the window or from chat (`bid 120`, `bid max`).
 - **Loot log**: treasure-pool drops from tracked mobs are logged with who lotted them, and a screenshot is taken and
-  filed next to the entry.
+  filed next to the entry. Only officers and leaders take the screenshot; viewers only log.
 - **HNM / NM windows**: 55 timed and forced-pop targets from the Phoenix server source. A kill your client sees (the
   game's own battle message, not chat text) sets the time of death; the clock moogle on screen counts down to the next
   known window, and you get a chime 30 minutes before it opens. On load, the last 24 hours of your own chat log are
@@ -75,7 +75,12 @@ with it can act as you in that linkshell's book.
 
 Posts into linkshell chat (ready checks, auction results, ToDs) go only to the book's own linkshell, in whichever slot
 you have it equipped, and only while it is equipped. ToDs are posted only by officers and only while a camp is running.
-Times are stored as one moment and shown in each player's own zone; LS posts carry the poster's zone and a countdown.
+When several officers have chat commands on, only one client runs a `!command` heard in the LS: the book owner's if
+they are in your alliance and zone, otherwise the first officer or admin name alphabetically there.
+
+Times are stored as one moment and shown in each player's own zone; LS posts, replies and the shared history carry the
+poster's zone and a countdown. A ToD typed as a clock time is your zone unless you add a zone tag: `21:43 et`, `9:43pm ct`,
+`18:02 utc-5` (handy for a ToD read off Discord). Relative times (`-15m`) need no tag.
 
 The sync server is a Cloudflare Worker with a D1 database, in `server/`. Its README has the deploy steps. Put the
 Worker URL in Settings > Sync server. The connection is HTTPS and the server certificate is checked against
@@ -87,7 +92,8 @@ Worker URL in Settings > Sync server. The connection is HTTPS and the server cer
   treasure-pool packets the server already sends you, and writes files and chat lines.
 - It never sends a chat line you did not switch on: every post can be turned off in Settings, replies by tell are
   optional and go only to people in the book.
-- It takes a screenshot only when a tracked drop lands (or never, in Settings).
+- It takes a screenshot only when a tracked drop lands, only if you are an officer or leader of the book (or never, in
+  Settings).
 - The only network traffic is to the sync server you set, and only for a book you have shared.
 
 ## Settings worth knowing
@@ -102,9 +108,10 @@ Worker URL in Settings > Sync server. The connection is HTTPS and the server cer
 
 `/hkp` opens the window. Everything has a button; the same actions exist as commands for macros:
 `/hkp event start <mob>` / `stop` / `auto <mob>`, `/hkp rc`, `/hkp auction <item> [min]`, `/hkp close`, `/hkp cancel`,
-`/hkp award <name> <price> <item>`, `/hkp add <name> <+/-n> [reason]`, `/hkp tod <mob> [now|21:43|-15m]`,
+`/hkp award <name> <price> <item>`, `/hkp add <name> <+/-n> [reason]`, `/hkp tod <mob> [now|21:43|9:43pm et|-15m]`,
 `/hkp role <name> <role>`, `/hkp price <item> <min>`, `/hkp track <mob> <minH> <maxH>`, `/hkp undo`, `/hkp export`,
-`/hkp backfill`, `/hkp help`.
+`/hkp backfill`, `/hkp help`, `/hkp setup` (LS leaders: the set-up steps and the Turn on DKP button on one card; the card
+also appears by itself when you have your own linkshell item equipped and it has no shared book yet).
 
 Mob aliases work everywhere a mob name does: `ka` King Arthro, `kb` King Behemoth, `faf` Fafnir, `nid` Nidhogg,
 `ada` Adamantoise, `aspid` Aspidochelone, `sim` Simurgh, `serk` Serket, `tia` Tiamat, `jorm` Jormungand,

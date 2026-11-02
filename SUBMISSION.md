@@ -25,7 +25,7 @@ In-game screenshots of every tab, the moogle and the alert: [docs/screenshots](d
 - `config\addons\heaphkp\state.json`, rewritten every 5 s with the book's standings and timers, so other addons on the
   same PC can read them. Local file only.
 - Files under `config\addons\heaphkp\` and a copy of a screenshot (taken with Ashita's own `/screenshot`) when a tracked
-  drop lands. Screenshots can be turned off.
+  drop lands, and only if the user is an officer or leader of the book. Screenshots can be turned off.
 - Chat lines, every one of them optional and off-able in Settings: ready-check announcements (a timed post every N
   minutes **only while you have started a camp**), auction open/close lines, a ToD line when a tracked mob dies (only
   from officers, only while a camp is running), replies by tell (bid refused, balance) only to people already in the
